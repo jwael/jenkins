@@ -14,13 +14,11 @@ import java.util.logging.Logger;
 class BatchingApplicationTests {
 
 
-    public  static Logger logger  = (Logger) LoggerFactory.getLogger(BatchingApplication.class);
 
     @Test
     void contextLoads() {
 
-        logger.info("test case executing....");
-        Assertions.assertEquals(true, true);
+       // Assertions.assertEquals(true, true);
     }
 
 }

@@ -9,18 +9,18 @@ import javax.annotation.PostConstruct;
 import java.util.logging.Logger;
 
 @SpringBootApplication
+@Slf4j
 public class BatchingApplication {
 
 
-    public  static Logger logger  = (Logger) LoggerFactory.getLogger(BatchingApplication.class);
 
     @PostConstruct
     public void init(){
-        logger.info("Application Started");
+        log.info("application started");
     }
 
     public static void main(String[] args) {
-        logger.info("Application executed");
+        log.info("Application executed");
         SpringApplication.run(BatchingApplication.class, args);
     }
 

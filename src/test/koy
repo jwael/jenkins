@@ -1,0 +1,96 @@
+   @Nested
+    inner class DriveCases {
+
+        @Test
+        fun `should process all customers through BLM and CRM creation`() = runBlocking {
+            // Arrange mocks
+            coEvery { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+            every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+            coEvery { batchRepositorySpi.save(any()) } answers { firstArg() }
+
+            // CRM mocks
+            every { crmCustomerProviderSpi.createCrmCustomer(any()) } answers {
+                CrmCustomerResponsePayload(crmAccountId = "CRM_ACC_ID", crmStatus = StepStatus.OK, message = "Created")
+            }
+            every { crmCustomerProviderSpi.updateCrmCustomer(any()) } answers {
+                CrmCustomerResponsePayload(crmAccountId = "CRM_ACC_ID", crmStatus = StepStatus.OK, message = "Updated")
+            }
+            every { crmCustomerProviderSpi.createCrmRole(any()) } answers {
+                CrmRoleResponsePayload(crmRoleId = "CRM_ROLE_ID", crmStatus = StepStatus.OK, message = "RoleCreated")
+            }
+            every { crmCustomerProviderSpi.updateCrmRole(any()) } answers {
+                CrmRoleResponsePayload(crmRoleId = "CRM_ROLE_ID", crmStatus = StepStatus.OK, message = "RoleUpdated")
+            }
+
+            // Act
+            importCustomerService.apply(newBatch, customersToCreate)
+
+            // Assert
+            coVerify(exactly = customersToCreate.size) { crmClsCustomerDataRepositorySpi.save(any()) }
+            verify(atLeast = 1) { recordStepEventRepositorySpi.save(any()) }
+            coVerify { batchRepositorySpi.save(any()) }
+            verify { crmCustomerProviderSpi.createCrmCustomer(any()) }
+        }
+
+        @Test
+        fun `should handle customer update scenario`() = runBlocking {
+            val payload = customersToCreate.first()
+
+            // Arrange: simulate that customer already exists and needs update
+            every { crmCustomerProviderSpi.createCrmCustomer(any()) } answers {
+                CrmCustomerResponsePayload(crmAccountId = "CRM_ACC_ID", crmStatus = StepStatus.TO_UPDATE, message = "Update required")
+            }
+            coEvery { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+            every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+            coEvery { batchRepositorySpi.save(any()) } answers { firstArg() }
+            every { crmCustomerProviderSpi.updateCrmCustomer(any()) } answers {
+                CrmCustomerResponsePayload(crmAccountId = "CRM_ACC_ID", crmStatus = StepStatus.OK, message = "Updated")
+            }
+
+            // Act
+            importCustomerService.apply(newBatch, listOf(payload))
+
+            // Assert: update path called
+            verify { crmCustomerProviderSpi.updateCrmCustomer(any()) }
+            verify { recordStepEventRepositorySpi.save(any()) }
+        }
+
+        @Test
+        fun `should handle role creation and update`() = runBlocking {
+            val payload = customersToCreate.first()
+
+            // Arrange: simulate role creation and update
+            every { crmCustomerProviderSpi.createCrmRole(any()) } answers {
+                CrmRoleResponsePayload(crmRoleId = "CRM_ROLE_ID", crmStatus = StepStatus.OK, message = "Role created")
+            }
+            every { crmCustomerProviderSpi.updateCrmRole(any()) } answers {
+                CrmRoleResponsePayload(crmRoleId = "CRM_ROLE_ID", crmStatus = StepStatus.OK, message = "Role updated")
+            }
+            coEvery { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+            every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+            coEvery { batchRepositorySpi.save(any()) } answers { firstArg() }
+
+            // Act
+            importCustomerService.apply(newBatch, listOf(payload))
+
+            // Assert
+            verify { crmCustomerProviderSpi.createCrmRole(any()) }
+            verify { crmCustomerProviderSpi.updateCrmRole(any()) }
+            verify { recordStepEventRepositorySpi.save(any()) }
+        }
+
+        @Test
+        fun `should record KO event when exception occurs`() = runBlocking {
+            val payload = customersToCreate.first()
+            coEvery { crmClsCustomerDataRepositorySpi.save(any()) } throws RuntimeException("DB error")
+            every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+            coEvery { batchRepositorySpi.save(any()) } answers { firstArg() }
+
+            // Act
+            importCustomerService.apply(newBatch, listOf(payload))
+
+            // Assert
+            verify { recordStepEventRepositorySpi.save(match { it.stepStatus == StepStatus.KO }) }
+        }
+    }
+}

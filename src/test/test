@@ -73,6 +73,106 @@ class ImportCustomerServiceTest {
         )
     }.toList()
 
+
+
+toList()
+
+    @Nested
+    inner class DriveCases {
+
+        @Test
+        fun `should process all customers successfully`() = runBlocking {
+            // Arrange
+            every { batchRepositorySpi.save(any()) } answers { firstArg() }
+            every { recordStepEventRepositorySpi.save(any()) } just Runs
+            every { crmClsCustomerDataRepositorySpi.saveAll(any()) } returns customersToCreate
+
+            // Act
+            importCustomerService.apply(newBatch, customersToCreate)
+
+            // Assert
+            verify(exactly = 1) { batchRepositorySpi.save(any()) }
+            verify(atLeast = 1) { recordStepEventRepositorySpi.save(any()) }
+            verify(exactly = 1) { crmClsCustomerDataRepositorySpi.saveAll(any()) }
+        }
+
+        @ParameterizedTest
+        @CsvSource(
+            "John, Doe",
+            "Jane, Smith",
+            "Pierre, Dupont"
+        )
+        fun `should handle different customer names`(firstName: String, surname: String) = runBlocking {
+            // Arrange
+            every { batchRepositorySpi.save(any()) } answers { firstArg() }
+            every { recordStepEventRepositorySpi.save(any()) } just Runs
+            every { crmClsCustomerDataRepositorySpi.saveAll(any()) } returns emptyList()
+
+            val payload = CustomerPayload(
+                rowNumber = 1,
+                crmData = CrmData(
+                    firstName = firstName,
+                    surname = surname,
+                    mainCountry = "FRANCE",
+                    country = "FR"
+                ),
+                clsData = emptyMap(),
+                errorMessage = null
+            )
+
+            // Act
+            importCustomerService.apply(newBatch, listOf(payload))
+
+            // Assert
+            verify { batchRepositorySpi.save(any()) }
+            verify { recordStepEventRepositorySpi.save(any()) }
+        }
+
+        @Test
+        fun `should skip customer with missing mandatory data`() = runBlocking {
+            // Arrange : customer sans prénom/nom
+            val invalidPayload = CustomerPayload(
+                rowNumber = 99,
+                crmData = CrmData(
+                    firstName = null,
+                    surname = null,
+                    mainCountry = "FRANCE",
+                    country = "FR"
+                ),
+                clsData = emptyMap(),
+                errorMessage = null
+            )
+            every { batchRepositorySpi.save(any()) } answers { firstArg() }
+            every { recordStepEventRepositorySpi.save(any()) } just Runs
+
+            // Act
+            importCustomerService.apply(newBatch, listOf(invalidPayload))
+
+            // Assert : on s’attend à ce que l’événement d’erreur soit enregistré
+            verify { recordStepEventRepositorySpi.save(any()) }
+            confirmVerified(crmClsCustomerDataRepositorySpi)
+        }
+
+        @Test
+        fun `should process empty customer list without error`() = runBlocking {
+            // Arrange
+            every { batchRepositorySpi.save(any()) } answers { firstArg() }
+            every { recordStepEventRepositorySpi.save(any()) } just Runs
+
+            // Act
+            importCustomerService.apply(newBatch, emptyList())
+
+            // Assert
+            verify { batchRepositorySpi.save(any()) }
+            verify { recordStepEventRepositorySpi.save(any()) }
+        }
+    }
+}
+
+
+
+
+
     @Nested
     inner class DriveCases {
 

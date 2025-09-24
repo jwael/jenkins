@@ -1,0 +1,167 @@
+import io.mockk.*
+import kotlinx.coroutines.runBlocking
+import org.instancio.Instancio
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import java.time.Instant
+import java.time.LocalDate
+import java.util.stream.IntStream
+
+class ImportCustomerServiceTest {
+
+    // Mocks
+    private val referenceIdFactory: ReferenceIdFactory = mockk { }
+    private val clockProvider: ClockProvider = mockk { every { now() } returns Instant.MIN }
+    private val crmClsCustomerDataRepositorySpi: CrmClsCustomerDataRepositorySpi = mockk()
+    private val batchRepositorySpi: BatchRepositoryForContactsSpi = mockk()
+    private val crmCustomerProviderSpi: CrmCustomerProviderSpi = mockk()
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+
+    // Classe sous test
+    private val importCustomerService = ImportCustomerService(
+        referenceIdFactory = referenceIdFactory,
+        clockProvider = clockProvider,
+        crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+        batchRepositorySpi = batchRepositorySpi,
+        crmCustomerProviderSpi = crmCustomerProviderSpi,
+        recordStepEventRepositorySpi = recordStepEventRepositorySpi
+    )
+
+    // Batch factice
+    private val batchReference = ReferenceId(value = "HVrA7jQziv")
+    private val newBatch = LoaderBatch(
+        id = "AAAAA",
+        reference = batchReference,
+        fileName = "a-file-name.csv",
+        triggeredBy = "u00001",
+        countryCode = CountryCode("GB"),
+        status = LoaderBatchStatus.RUNNING
+    )
+
+    // Génération de payloads factices
+    private val customerCount = 2
+    private val customersToCreate = IntStream.range(0, customerCount).mapToObj { i ->
+        CustomerPayload(
+            rowNumber = i,
+            errorMessage = null,
+            crmData = Instancio.of(CrmData::class.java)
+                .set(CrmData::firstName, "John$i")
+                .set(CrmData::surname, "Doe$i")
+                .set(CrmData::salutation, "Dr.")
+                .set(CrmData::title, "Dr.")
+                .set(CrmData::gender, "Male")
+                .set(CrmData::contactRole, "Driver")
+                .set(CrmData::mainCountry, "FRANCE")
+                .set(CrmData::personalIdentificationNumber, "ID$i")
+                .set(CrmData::customerProspect, "prospect")
+                .set(CrmData::phone, "019201290")
+                .set(CrmData::mobilePhone, "092918912")
+                .set(CrmData::email, "john$i@email.fr")
+                .set(CrmData::address1, "Street 1")
+                .set(CrmData::address2, "Street 2")
+                .set(CrmData::postalCode, "75000")
+                .set(CrmData::state, "State")
+                .set(CrmData::country, "FR")      // pays valide
+                .set(CrmData::homeCountry, "FR")  // initialise pour éviter erreurs
+                .set(CrmData::workCountry, "FR")  // initialise pour éviter erreurs
+                .set(CrmData::businessType, "TypeA")
+                .create(),
+            clsData = emptyMap()
+        )
+    }.toList()
+
+    @Nested
+    inner class DriveCases {
+
+        @Test
+        fun `payload avec errorMessage doit enregistrer KO`() = runBlocking {
+            val payloadWithError = CustomerPayload(
+                rowNumber = 10,
+                crmData = Crmbata(firstName = "Error", surname = "Customer", mainCountry = "FRANCE"),
+                clsData = emptyMap(),
+                errorMessage = "Erreur test"
+            )
+
+            importCustomerService.apply(newBatch, listOf(payloadWithError))
+
+            verify { recordStepEventRepositorySpi.save(
+                match { it.stepStatus == StepStatus.KO && it.stepMessage == "Erreur test" }
+            ) }
+        }
+
+        @Test
+        fun `creation client CRM (SF_CREATE)`() = runBlocking {
+            val payload = customersToCreate[0]
+
+            // Mock fonctions internes non implémentées
+            every { importCustomerService["processCustomerCreationInCrmStep"](any()) } just Runs
+            every { importCustomerService["processCustomerSavingInBlmStep"](any()) } answers { firstArg() }
+
+            importCustomerService.apply(newBatch, listOf(payload))
+
+            verify { importCustomerService["processCustomerCreationInCrmStep"](any()) }
+            verify { recordStepEventRepositorySpi.save(any()) }
+        }
+
+        @Test
+        fun `mise a jour client CRM (SF_UPDATE)`() = runBlocking {
+            val payload = customersToCreate[1]
+
+            every { importCustomerService["processCustomerUpdateInCrmStep"](any()) } just Runs
+            every { importCustomerService["processCustomerSavingInBlmStep"](any()) } answers { firstArg() }
+
+            importCustomerService.apply(newBatch, listOf(payload))
+
+            verify { importCustomerService["processCustomerUpdateInCrmStep"](any()) }
+            verify { recordStepEventRepositorySpi.save(any()) }
+        }
+
+        @Test
+        fun `creation role CRM (SF_CREATE_ROLE)`() = runBlocking {
+            val payload = customersToCreate[0]
+
+            every { importCustomerService["processRoleCreationInCrmStep"](any()) } just Runs
+            every { importCustomerService["processCustomerSavingInBlmStep"](any()) } answers { firstArg() }
+
+            importCustomerService.apply(newBatch, listOf(payload))
+
+            verify { importCustomerService["processRoleCreationInCrmStep"](any()) }
+            verify { recordStepEventRepositorySpi.save(any()) }
+        }
+
+        @Test
+        fun `mise a jour role CRM (SF_UPDATE_ROLE)`() = runBlocking {
+            val payload = customersToCreate[1]
+
+            every { importCustomerService["processRoleUpdateInCrmStep"](any()) } just Runs
+            every { importCustomerService["processCustomerSavingInBlmStep"](any()) } answers { firstArg() }
+
+            importCustomerService.apply(newBatch, listOf(payload))
+
+            verify { importCustomerService["processRoleUpdateInCrmStep"](any()) }
+            verify { recordStepEventRepositorySpi.save(any()) }
+        }
+
+        @ParameterizedTest
+        @CsvSource(
+            "John, Doe",
+            "Jane, Smith"
+        )
+        fun `should handle different customer names`(firstName: String, surname: String) = runBlocking {
+            val payload = CustomerPayload(
+                rowNumber = 1,
+                crmData = Crmbata(firstName = firstName, surname = surname, mainCountry = "FRANCE"),
+                clsData = emptyMap(),
+                errorMessage = null
+            )
+
+            every { importCustomerService["processCustomerCreationInCrmStep"](any()) } just Runs
+            every { importCustomerService["processCustomerSavingInBlmStep"](any()) } answers { firstArg() }
+
+            importCustomerService.apply(newBatch, listOf(payload))
+            verify { recordStepEventRepositorySpi.save(any()) }
+        }
+    }
+}

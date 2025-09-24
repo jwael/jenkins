@@ -1,0 +1,134 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import java.util.concurrent.CompletableFuture
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+
+class ImportCustomerServiceTest {
+
+    private val recordStepEventRepositorySpi = mockk<RecordStepEventRepositorySpi>()
+    private val crmClsCustomerDataRepositorySpi = mockk<CrmClsCustomerDataRepositorySpi>()
+    private val crmCustomerProviderSpi = mockk<CrmCustomerProviderSpi>()
+    private val batchRepositorySpi = mockk<BatchRepositoryForContactsSpi>()
+    
+    private lateinit var importCustomerService: ImportCustomerService
+
+    @BeforeEach
+    fun setUp() {
+        clearAllMocks()
+        importCustomerService = ImportCustomerService(
+            recordStepEventRepositorySpi,
+            crmClsCustomerDataRepositorySpi,
+            crmCustomerProviderSpi,
+            batchRepositorySpi
+        )
+    }
+
+    @Test
+    fun `apply should process valid personal accounts successfully`() {
+        // Given
+        val batch = LoaderBatch(id = 1, reference = "batch-ref")
+        val personalAccount = CustomerPayload(rowNumber = 1, errorMessage = null)
+        val crmClsCustomerData = CrmClsCustomerData(batchId = 1, rowNumber = 1)
+        
+        every { importCustomerService.createCrmClsCustomerData(batch, personalAccount) } returns crmClsCustomerData
+        every { importCustomerService.processCustomerSavingInBlmStep(crmClsCustomerData) } returns crmClsCustomerData
+        every { importCustomerService.processCustomerCreationInCrmStep(crmClsCustomerData) } just Runs
+        every { recordStepEventRepositorySpi.save(any()) } just Runs
+
+        // When
+        importCustomerService.apply(batch, listOf(personalAccount))
+
+        // Then
+        verify { importCustomerService.processCustomerSavingInBlmStep(crmClsCustomerData) }
+    }
+
+    @Test
+    fun `apply should handle personal account with error message`() {
+        // Given
+        val batch = LoaderBatch(id = 1, reference = "batch-ref")
+        val personalAccount = CustomerPayload(rowNumber = 1, errorMessage = "Error detected")
+        
+        every { recordStepEventRepositorySpi.save(any()) } just Runs
+        every { batchRepositorySpi.updateBatchStatus(any()) } just Runs
+
+        // When
+        importCustomerService.apply(batch, listOf(personalAccount))
+
+        // Then
+        verify { recordStepEventRepositorySpi.save(match { it.stepStatus == "KO" }) }
+    }
+
+    @Test
+    fun `apply should handle exception during processing`() {
+        // Given
+        val batch = LoaderBatch(id = 1, reference = "batch-ref")
+        val personalAccount = CustomerPayload(rowNumber = 1, errorMessage = null)
+        
+        every { importCustomerService.createCrmClsCustomerData(batch, personalAccount) } throws RuntimeException("DB error")
+        every { recordStepEventRepositorySpi.save(any()) } just Runs
+        every { batchRepositorySpi.updateBatchStatus(any()) } just Runs
+
+        // When
+        importCustomerService.apply(batch, listOf(personalAccount))
+
+        // Then
+        verify { recordStepEventRepositorySpi.save(match { it.stepStatus == "KO" }) }
+    }
+
+    @Test
+    fun `processCustomerSavingInBlmStep should save data and record event`() {
+        // Given
+        val crmClsCustomerData = CrmClsCustomerData(batchId = 1, rowNumber = 1)
+        val savedData = crmClsCustomerData.copy(crmInsertedId = "123")
+        
+        every { crmClsCustomerDataRepositorySpi.save(crmClsCustomerData) } returns savedData
+        every { recordStepEventRepositorySpi.save(any()) } just Runs
+
+        // When
+        val result = importCustomerService.processCustomerSavingInBlmStep(crmClsCustomerData)
+
+        // Then
+        assertEquals(savedData, result)
+        verify { 
+            crmClsCustomerDataRepositorySpi.save(crmClsCustomerData)
+            recordStepEventRepositorySpi.save(match { it.stepStatus == "OK" && it.stepName == "BLM" })
+        }
+    }
+
+    @Test
+    fun `processCustomerCreationInCrmStep should handle create scenario`() {
+        // Given
+        val crmClsCustomerData = CrmClsCustomerData(batchId = 1, rowNumber = 1)
+        val response = CrmCustomerResponsePayload(crmStatus = "SUCCESS", crmAccountId = "acc-123")
+        
+        every { crmCustomerProviderSpi.createCrmCustomer(crmClsCustomerData) } returns response
+        every { crmClsCustomerDataRepositorySpi.save(any()) } returns crmClsCustomerData
+        every { recordStepEventRepositorySpi.save(any()) } just Runs
+
+        // When
+        importCustomerService.processCustomerCreationInCrmStep(crmClsCustomerData)
+
+        // Then
+        verify { 
+            crmCustomerProviderSpi.createCrmCustomer(crmClsCustomerData)
+            recordStepEventRepositorySpi.save(match { it.stepName == "SF_CREATE" })
+        }
+    }
+
+    @Test
+    fun `createCrmClsCustomerData should create valid data object`() {
+        // Given
+        val batch = LoaderBatch(id = 1, reference = "batch-ref")
+        val personalAccount = CustomerPayload(rowNumber = 1)
+
+        // When
+        val result = importCustomerService.createCrmClsCustomerData(batch, personalAccount)
+
+        // Then
+        assertEquals(1, result.batchId)
+        assertEquals(1, result.rowNumber)
+        assertEquals("batch-ref", result.reconciliationId.batchReference)
+    }
+}

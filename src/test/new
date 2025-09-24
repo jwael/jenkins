@@ -1,0 +1,39 @@
+import io.mockk.*
+import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+
+class ImportCustomerServiceErrorTest {
+
+    private val recordStepEventRepositorySpi = mockk<RecordStepEventRepositorySpi>(relaxed = true)
+    private val crmClsCustomerDataRepositorySpi = mockk<CrmClsCustomerDataRepositorySpi>(relaxed = true)
+    private val crmCustomerProviderSpi = mockk<CrmCustomerProviderSpi>(relaxed = true)
+    private val batchRepositorySpi = mockk<BatchRepositoryForContactsSpi>(relaxed = true)
+
+    private val service = ImportCustomerService(
+        recordStepEventRepositorySpi,
+        crmClsCustomerDataRepositorySpi,
+        crmCustomerProviderSpi,
+        batchRepositorySpi
+    )
+
+    @Test
+    fun `apply should not call CRM creation if customer has error`() = runBlocking {
+        // GIVEN
+        val batch = LoaderBatch(id = 1, reference = "batch-ref")
+        val customerWithError = CustomerPayload(
+            rowNumber = 1,
+            crmData = CrmData(),
+            clsData = emptyMap(),
+            errorMessage = "Some error"
+        )
+
+        // WHEN
+        service.apply(batch, listOf(customerWithError))
+
+        // THEN
+        verify(exactly = 0) { crmClsCustomerDataRepositorySpi.save(any()) }
+        verify(exactly = 0) { crmCustomerProviderSpi.createCrmCustomer(any()) }
+        verify(exactly = 1) { recordStepEventRepositorySpi.save(match { it.stepStatus == "KO" }) }
+    }
+}

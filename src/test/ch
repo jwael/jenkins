@@ -1,0 +1,169 @@
+import io.mockk.*
+import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import java.time.Instant
+import java.time.LocalDate
+import java.util.stream.IntStream
+
+class ImportCustomerServiceTest {
+
+    // Mocks
+    private val referenceIdFactory: ReferenceIdFactory = mockk { every { generate() } returns "row-ref-1" }
+    private val clockProvider: ClockProvider = mockk { every { now() } returns Instant.MIN }
+    private val crmClsCustomerDataRepositorySpi: CrmClsCustomerDataRepositorySpi = mockk()
+    private val batchRepositorySpi: BatchRepositoryForContactsSpi = mockk()
+    private val crmCustomerProviderSpi: CrmCustomerProviderSpi = mockk()
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+
+    // Classe sous test
+    private val importCustomerService = ImportCustomerService(
+        referenceIdFactory = referenceIdFactory,
+        clockProvider = clockProvider,
+        crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+        batchRepositorySpi = batchRepositorySpi,
+        crmCustomerProviderSpi = crmCustomerProviderSpi,
+        recordStepEventRepositorySpi = recordStepEventRepositorySpi
+    )
+
+    // Batch factice
+    private val batchReference = ReferenceId(value = "HVrA7jQziv")
+    private val newBatch = LoaderBatch(
+        id = "AAAAA",
+        reference = batchReference,
+        fileName = "a-file-name.csv",
+        triggeredBy = "u00001",
+        countryCode = CountryCode("GB"),
+        status = LoaderBatchStatus.RUNNING
+    )
+
+    // Génération de payloads factices
+    private val customersToCreate = IntStream.range(0, 2).mapToObj {
+        CustomerPayload(
+            rowNumber = it,
+            crmData = CrmData(
+                firstName = "John$it",
+                surname = "Doe$it",
+                mainCountry = "FRANCE",
+                country = "FR",
+                birthDate = LocalDate.of(1980, 1, 1),
+                contactRole = "Driver"
+            ),
+            clsData = emptyMap(),
+            errorMessage = null
+        )
+    }.toList()
+
+    // =========================
+    // Drive normal cases
+    // =========================
+    @Nested
+    inner class DriveCases {
+
+        @Test
+        fun `should process all customers successfully`() = runBlocking {
+            every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+            coEvery { crmCustomerProviderSpi.createCrmCustomer(any()) } returns CrmCustomerResponsePayload("OK", "Created", "CRM-ID-1")
+            coEvery { crmCustomerProviderSpi.updateCrmCustomer(any()) } returns CrmCustomerResponsePayload("OK", "Updated", "CRM-ID-2")
+
+            importCustomerService.apply(newBatch, customersToCreate)
+
+            coVerify(exactly = 2) { recordStepEventRepositorySpi.save(any()) }
+        }
+
+        @ParameterizedTest
+        @CsvSource("John, Doe", "Jane, Smith")
+        fun `should handle different customer names`(firstName: String, surname: String) = runBlocking {
+            val payload = CustomerPayload(
+                rowNumber = 1,
+                crmData = CrmData(firstName = firstName, surname = surname, mainCountry = "FRANCE", country = "FR"),
+                clsData = emptyMap(),
+                errorMessage = null
+            )
+            every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+            coEvery { crmCustomerProviderSpi.createCrmCustomer(any()) } returns CrmCustomerResponsePayload("OK", "Created", "CRM-ID-1")
+
+            importCustomerService.apply(newBatch, listOf(payload))
+
+            coVerify { recordStepEventRepositorySpi.save(any()) }
+        }
+    }
+
+    // =========================
+    // Cases where customer should not be created
+    // =========================
+    @Nested
+    @DisplayName("it shouldn't reach the create customer step")
+    inner class ItShouldNotCreateCustomer {
+
+        @Test
+        fun `when errorMessage is set`() = runBlocking {
+            val payload = CustomerPayload(
+                rowNumber = 1,
+                crmData = CrmData(firstName = "Test"),
+                clsData = emptyMap(),
+                errorMessage = "Error"
+            )
+
+            importCustomerService.apply(newBatch, listOf(payload))
+
+            coVerify(exactly = 1) { recordStepEventRepositorySpi.save(match { it.stepStatus == "KO" }) }
+            coVerify(exactly = 0) { crmClsCustomerDataRepositorySpi.save(any()) }
+            coVerify(exactly = 0) { crmCustomerProviderSpi.createCrmCustomer(any()) }
+        }
+    }
+
+    // =========================
+    // Role handling cases
+    // =========================
+    @Nested
+    inner class RoleCases {
+
+        @Test
+        fun `should create role correctly`() = runBlocking {
+            val crmClsData = mockk<CrmClsCustomerData>()
+            every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+            coEvery { crmCustomerProviderSpi.createCrmRole(any()) } returns CrmRoleResponsePayload("OK", "RoleCreated", "ROLE-ID-1")
+
+            importCustomerService.processRoleCreationInCrmStep(crmClsData)
+
+            coVerify { recordStepEventRepositorySpi.save(any()) }
+        }
+
+        @Test
+        fun `should update role correctly`() = runBlocking {
+            val crmClsData = mockk<CrmClsCustomerData>()
+            coEvery { crmCustomerProviderSpi.updateCrmRole(any()) } returns CrmRoleResponsePayload("OK", "RoleUpdated", "ROLE-ID-2")
+
+            importCustomerService.processRoleUpdateInCrmStep(crmClsData)
+
+            coVerify { recordStepEventRepositorySpi.save(any()) }
+        }
+    }
+
+    // =========================
+    // Error handling cases
+    // =========================
+    @Nested
+    inner class ErrorCases {
+
+        @Test
+        fun `should record error step when exception occurs`() = runBlocking {
+            val payload = CustomerPayload(
+                rowNumber = 1,
+                crmData = CrmData(firstName = "Test"),
+                clsData = emptyMap(),
+                errorMessage = null
+            )
+
+            every { crmClsCustomerDataRepositorySpi.save(any()) } throws RuntimeException("Save failed")
+
+            importCustomerService.apply(newBatch, listOf(payload))
+
+            coVerify { recordStepEventRepositorySpi.save(match { it.stepStatus == "KO" }) }
+        }
+    }
+}

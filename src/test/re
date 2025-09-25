@@ -80,5 +80,28 @@ class ImportCustomerServiceTest_TechLeadStyle {
         // 3. Mise à jour du batch appelée
         verify(exactly = 1) { service["updateBatchStatus"](batch) }
     }
+
+// WHEN
+        service.apply(batch, listOf(customerWithError))
+
+        // THEN
+        // 1. Aucune sauvegarde CRM ni appel provider
+        verify(exactly = 0) { crmClsCustomerDataRepositorySpi.save(any()) }
+        verify(exactly = 0) { crmCustomerProviderSpi.createCrmCustomer(any()) }
+
+        // 2. Un seul event KO enregistré avec enums
+        verify(exactly = 1) {
+            recordStepEventRepositorySpi.save(match {
+                it.batchId == "AAAAA" &&
+                it.rowNumber == 1 &&
+                it.stepName == RecordStepName.BLM &&
+                it.stepStatus == RecordStepStatus.KO
+            })
+        }
+
+        // 3. Mise à jour du batch
+        verify(exactly = 1) { service["updateBatchStatus"](batch) }
+
+
 }
 }

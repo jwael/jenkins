@@ -1,0 +1,105 @@
+class ImportCustomerServiceTest {
+
+    private val recordStepEventRepositorySpi = mockk<RecordStepEventRepositorySpi>(relaxed = true)
+    private val crmClsCustomerDataRepositorySpi = mockk<CrmClsCustomerDataRepositorySpi>(relaxed = true)
+    private val crmCustomerProviderSpi = mockk<CrmCustomerProviderSpi>(relaxed = true)
+    private val batchRepositorySpi = mockk<BatchRepositoryForContactsSpi>(relaxed = true)
+
+    private val service = spyk(
+        ImportCustomerService(
+            recordStepEventRepositorySpi,
+            crmClsCustomerDataRepositorySpi,
+            crmCustomerProviderSpi,
+            batchRepositorySpi
+        )
+    )
+
+    // -------------------------
+    // Définition unique de batch et customer
+    // -------------------------
+    private val defaultBatch = LoaderBatch(
+        id = "AAAAA",
+        reference = ReferenceId("REFDEFAULT"),
+        fileName = "file.csv",
+        triggeredBy = "u00001",
+        countryCode = CountryCode("FR"),
+        status = LoaderBatchStatus.RUNNING,
+        type = LoaderBatchType.CONTACTS,
+        startDate = Instant.now(),
+        endDate = Instant.now().plusSeconds(180),
+        totalContacts = 1
+    )
+
+    private val customerWithError = CustomerPayload(
+        rowNumber = 1,
+        crmData = CrmData(
+            firstName = "Jean",
+            surname = "Dupont",
+            email = "jean.dupont@example.com",
+            country = "FR"
+        ),
+        clsData = emptyMap(),
+        errorMessage = "Erreur détectée"
+    )
+
+    private val customerHappyPath = CustomerPayload(
+        rowNumber = 2,
+        crmData = CrmData(
+            firstName = "Alice",
+            surname = "Martin",
+            email = "alice.martin@example.com",
+            country = "FR"
+        ),
+        clsData = emptyMap(),
+        errorMessage = null
+    )
+
+    // -------------------------
+    // Test KO
+    // -------------------------
+    @Test
+    fun `it should save KO event and call batchRepository save when customer has errorMessage`() = runBlocking {
+        every { batchRepositorySpi.save(any()) } answers { firstArg() }
+
+        service.apply(defaultBatch, listOf(customerWithError))
+
+        verify(exactly = 0) { crmClsCustomerDataRepositorySpi.save(any()) }
+        verify(exactly = 0) { crmCustomerProviderSpi.createCrmCustomer(any()) }
+        verify(exactly = 1) {
+            recordStepEventRepositorySpi.save(match {
+                it.batchId == defaultBatch.id &&
+                it.rowNumber == customerWithError.rowNumber &&
+                it.stepName == RecordStepName.BLM &&
+                it.stepStatus == RecordStepStatus.KO
+            })
+        }
+        verify(exactly = 1) { batchRepositorySpi.save(loaderBatch = match { it.id == defaultBatch.id }) }
+    }
+
+    // -------------------------
+    // Test Happy Path
+    // -------------------------
+    @Test
+    fun `it should create CRM customer and save event OK when no errorMessage`() = runBlocking {
+        val crmResponse = CrmCustomerResponsePayload(
+            crmAccountId = "SF12345",
+            crmStatus = RecordStepStatus.OK
+        )
+
+        every { crmCustomerProviderSpi.createCrmCustomer(any()) } returns crmResponse
+        every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+        every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+        every { batchRepositorySpi.save(any()) } answers { firstArg() }
+
+        service.apply(defaultBatch, listOf(customerHappyPath))
+
+        verify(exactly = 1) { crmCustomerProviderSpi.createCrmCustomer(any()) }
+        verify(exactly = 1) { crmClsCustomerDataRepositorySpi.save(any()) }
+        verify(exactly = 1) {
+            recordStepEventRepositorySpi.save(match {
+                it.stepName == RecordStepName.SF_CREATE && it.stepStatus == RecordStepStatus.OK
+            })
+        }
+        verify(exactly = 1) { batchRepositorySpi.save(loaderBatch = match { it.id == defaultBatch.id }) }
+    }
+}

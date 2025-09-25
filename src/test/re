@@ -45,4 +45,40 @@ class ImportCustomerServiceTest_TechLeadStyle {
         verify(exactly = 1) { recordStepEventRepositorySpi.save(match { it.stepStatus == "KO" }) }
         verify(exactly = 1) { service["updateBatchStatus"](batch) } // vérifie appel privé via spyk
     }
+
+
+
+  @Test
+    fun `it should save KO event and skip CRM calls when customer has errorMessage`() = runBlocking {
+        // GIVEN
+        val batch = LoaderBatch(id = "AAAAA", reference = "batch-ref")
+        val customerWithError = CustomerPayload(
+            rowNumber = 1,
+            crmData = CrmData(firstName = "Jean", surname = "Dupont"),
+            clsData = emptyMap(),
+            errorMessage = "Erreur détectée"
+        )
+
+        // WHEN
+        service.apply(batch, listOf(customerWithError))
+
+        // THEN
+        // 1. Aucune sauvegarde de CRM ni appel provider
+        verify(exactly = 0) { crmClsCustomerDataRepositorySpi.save(any()) }
+        verify(exactly = 0) { crmCustomerProviderSpi.createCrmCustomer(any()) }
+
+        // 2. Un seul event KO enregistré
+        verify(exactly = 1) {
+            recordStepEventRepositorySpi.save(match {
+                it.batchId == "AAAAA" &&
+                it.rowNumber == 1 &&
+                it.stepName == "BLM" &&
+                it.stepStatus.uppercase() == "KO" // robust: tolère "ko", "KO"
+            })
+        }
+
+        // 3. Mise à jour du batch appelée
+        verify(exactly = 1) { service["updateBatchStatus"](batch) }
+    }
+}
 }

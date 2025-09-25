@@ -1,9 +1,10 @@
 import io.mockk.*
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
+import java.time.Instant
 import java.time.LocalDate
 
-class ImportCustomerServiceTest_TechLeadStyle {
+class ImportCustomerServiceTest {
 
     private val recordStepEventRepositorySpi = mockk<RecordStepEventRepositorySpi>(relaxed = true)
     private val crmClsCustomerDataRepositorySpi = mockk<CrmClsCustomerDataRepositorySpi>(relaxed = true)
@@ -19,110 +20,192 @@ class ImportCustomerServiceTest_TechLeadStyle {
         )
     )
 
+    // -------------------------
+    // 1️⃣ Scénario KO : client avec errorMessage
+    // -------------------------
     @Test
-    fun `it should not reach CRM steps when customer has errorMessage`() = runBlocking {
-        // GIVEN
-        val batch = LoaderBatch(id = 1, reference = "batch-ref")
-        val customerWithError = CustomerPayload(
+    fun `it should save KO event and call batchRepository save when customer has errorMessage`() = runBlocking {
+        val batch = LoaderBatch(
+            id = "AAAAA",
+            reference = ReferenceId("REFKO"),
+            fileName = "file.csv",
+            triggeredBy = "u00001",
+            countryCode = CountryCode("FR"),
+            status = LoaderBatchStatus.RUNNING,
+            type = LoaderBatchType.CONTACTS,
+            startDate = Instant.now(),
+            endDate = Instant.now().plusSeconds(180),
+            totalContacts = 1
+        )
+
+        val customer = CustomerPayload(
             rowNumber = 1,
-            crmData = CrmData(
-                firstName = "Jean",
-                surname = "Dupont",
-                email = "jean.dupont@example.com",
-                country = "FR",
-                birthDate = LocalDate.of(1990, 1, 1)
-            ),
+            crmData = CrmData(firstName = "Jean", surname = "Dupont", email = "jean.dupont@example.com"),
             clsData = emptyMap(),
             errorMessage = "Erreur détectée"
         )
 
-        // WHEN
-        service.apply(batch, listOf(customerWithError))
+        every { batchRepositorySpi.save(any()) } answers { firstArg() }
 
-        // THEN (style Tech Lead)
+        service.apply(batch, listOf(customer))
+
         verify(exactly = 0) { crmClsCustomerDataRepositorySpi.save(any()) }
         verify(exactly = 0) { crmCustomerProviderSpi.createCrmCustomer(any()) }
-        verify(exactly = 1) { recordStepEventRepositorySpi.save(match { it.stepStatus == "KO" }) }
-        verify(exactly = 1) { service["updateBatchStatus"](batch) } // vérifie appel privé via spyk
+        verify(exactly = 1) {
+            recordStepEventRepositorySpi.save(match {
+                it.batchId == batch.id &&
+                it.rowNumber == customer.rowNumber &&
+                it.stepName == RecordStepName.BLM &&
+                it.stepStatus == RecordStepStatus.KO
+            })
+        }
+        verify(exactly = 1) { batchRepositorySpi.save(loaderBatch = match { it.id == batch.id }) }
     }
 
-
-
-  @Test
-    fun `it should save KO event and skip CRM calls when customer has errorMessage`() = runBlocking {
-        // GIVEN
-        val batch = LoaderBatch(id = "AAAAA", reference = "batch-ref")
-        val customerWithError = CustomerPayload(
-            rowNumber = 1,
-            crmData = CrmData(firstName = "Jean", surname = "Dupont"),
-            clsData = emptyMap(),
-            errorMessage = "Erreur détectée"
+    // -------------------------
+    // 2️⃣ Happy Path : création CRM et event OK
+    // -------------------------
+    @Test
+    fun `it should create CRM customer and save event OK when no errorMessage`() = runBlocking {
+        val batch = LoaderBatch(
+            id = "BBBBB",
+            reference = ReferenceId("REFOK"),
+            fileName = "file.csv",
+            triggeredBy = "u00002",
+            countryCode = CountryCode("FR"),
+            status = LoaderBatchStatus.RUNNING,
+            type = LoaderBatchType.CONTACTS,
+            startDate = Instant.now(),
+            endDate = Instant.now().plusSeconds(180),
+            totalContacts = 1
         )
 
-        // WHEN
-        service.apply(batch, listOf(customerWithError))
+        val customer = CustomerPayload(
+            rowNumber = 1,
+            crmData = CrmData(firstName = "Alice", surname = "Martin", email = "alice.martin@example.com"),
+            clsData = emptyMap(),
+            errorMessage = null
+        )
 
-        // THEN
-        // 1. Aucune sauvegarde de CRM ni appel provider
-        verify(exactly = 0) { crmClsCustomerDataRepositorySpi.save(any()) }
-        verify(exactly = 0) { crmCustomerProviderSpi.createCrmCustomer(any()) }
+        val crmResponse = CrmCustomerResponsePayload(
+            crmAccountId = "SF12345",
+            crmStatus = RecordStepStatus.OK
+        )
 
-        // 2. Un seul event KO enregistré
+        every { crmCustomerProviderSpi.createCrmCustomer(any()) } returns crmResponse
+        every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+        every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+        every { batchRepositorySpi.save(any()) } answers { firstArg() }
+
+        service.apply(batch, listOf(customer))
+
+        verify(exactly = 1) { crmCustomerProviderSpi.createCrmCustomer(any()) }
+        verify(exactly = 1) { crmClsCustomerDataRepositorySpi.save(any()) }
         verify(exactly = 1) {
             recordStepEventRepositorySpi.save(match {
-                it.batchId == "AAAAA" &&
-                it.rowNumber == 1 &&
-                it.stepName == "BLM" &&
-                it.stepStatus.uppercase() == "KO" // robust: tolère "ko", "KO"
+                it.stepName == RecordStepName.SF_CREATE && it.stepStatus == RecordStepStatus.OK
             })
         }
-
-        // 3. Mise à jour du batch appelée
-        verify(exactly = 1) { service["updateBatchStatus"](batch) }
+        verify(exactly = 1) { batchRepositorySpi.save(loaderBatch = match { it.id == batch.id }) }
     }
 
-// WHEN
-        service.apply(batch, listOf(customerWithError))
+    // -------------------------
+    // 3️⃣ Update CRM : isUpdateRole
+    // -------------------------
+    @Test
+    fun `it should update CRM customer and save event OK when isUpdateRole`() = runBlocking {
+        val batch = LoaderBatch(
+            id = "CCCC",
+            reference = ReferenceId("REFUPDATE"),
+            fileName = "file.csv",
+            triggeredBy = "u00003",
+            countryCode = CountryCode("FR"),
+            status = LoaderBatchStatus.RUNNING,
+            type = LoaderBatchType.CONTACTS,
+            startDate = Instant.now(),
+            endDate = Instant.now().plusSeconds(180),
+            totalContacts = 1
+        )
 
-        // THEN
-        // 1. Aucune sauvegarde CRM ni appel provider
-        verify(exactly = 0) { crmClsCustomerDataRepositorySpi.save(any()) }
-        verify(exactly = 0) { crmCustomerProviderSpi.createCrmCustomer(any()) }
+        val customer = CustomerPayload(
+            rowNumber = 1,
+            crmData = CrmData(firstName = "Bob", surname = "Dupuis"),
+            clsData = emptyMap(),
+            errorMessage = null
+        )
 
-        // 2. Un seul event KO enregistré avec enums
-        verify(exactly = 1) {
-            recordStepEventRepositorySpi.save(match {
-                it.batchId == "AAAAA" &&
-                it.rowNumber == 1 &&
-                it.stepName == RecordStepName.BLM &&
-                it.stepStatus == RecordStepStatus.KO
-            })
+        val crmResponse = CrmCustomerResponsePayload(
+            crmAccountId = "SF9999",
+            crmStatus = RecordStepStatus.OK
+        )
+
+        val savedCrmClsCustomerData = mockk<CrmClsCustomerData>(relaxed = true) {
+            every { isUpdateRole() } returns true
         }
 
-        // 3. Mise à jour du batch
-        verify(exactly = 1) { service["updateBatchStatus"](batch) }
+        every { service.processCustomerSavingInBlmStep(any()) } returns savedCrmClsCustomerData
+        every { crmCustomerProviderSpi.updateCrmCustomer(any()) } returns crmResponse
+        every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+        every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+        every { batchRepositorySpi.save(any()) } answers { firstArg() }
 
+        service.apply(batch, listOf(customer))
 
-WHEN
-        service.apply(batch, listOf(customerWithError))
-
-        // THEN
-        // 1. Aucune sauvegarde CRM ni appel provider
-        verify(exactly = 0) { crmClsCustomerDataRepositorySpi.save(any()) }
-        verify(exactly = 0) { crmCustomerProviderSpi.createCrmCustomer(any()) }
-
-        // 2. Un seul event KO enregistré (match sur enums + batchId + rowNumber)
+        verify(exactly = 1) { crmCustomerProviderSpi.updateCrmCustomer(any()) }
         verify(exactly = 1) {
-            recordStepEventRepositorySpi.save(match {
-                it.batchId == "AAAAA" &&
-                it.rowNumber == 1 &&
-                it.stepName == RecordStepName.BLM &&
-                it.stepStatus == RecordStepStatus.KO
-            })
+            recordStepEventRepositorySpi.save(match { it.stepName == RecordStepName.SF_UPDATE && it.stepStatus == RecordStepStatus.OK })
+        }
+        verify(exactly = 1) { batchRepositorySpi.save(loaderBatch = match { it.id == batch.id }) }
+    }
+
+    // -------------------------
+    // 4️⃣ Création rôle : isCreateRole
+    // -------------------------
+    @Test
+    fun `it should create CRM role and save event OK when isCreateRole`() = runBlocking {
+        val batch = LoaderBatch(
+            id = "DDDD",
+            reference = ReferenceId("REFROLE"),
+            fileName = "file.csv",
+            triggeredBy = "u00004",
+            countryCode = CountryCode("FR"),
+            status = LoaderBatchStatus.RUNNING,
+            type = LoaderBatchType.CONTACTS,
+            startDate = Instant.now(),
+            endDate = Instant.now().plusSeconds(180),
+            totalContacts = 1
+        )
+
+        val customer = CustomerPayload(
+            rowNumber = 1,
+            crmData = CrmData(firstName = "Claire", surname = "Lemoine"),
+            clsData = emptyMap(),
+            errorMessage = null
+        )
+
+        val crmRoleResponse = CrmRoleResponsePayload(
+            crmRoleId = "ROLE123",
+            crmStatus = RecordStepStatus.OK
+        )
+
+        val savedCrmClsCustomerData = mockk<CrmClsCustomerData>(relaxed = true) {
+            every { isCreateRole() } returns true
         }
 
-        // 3. Mise à jour du batch (méthode interne appelée)
-        verify(exactly = 1) { service["updateBatchStatus"](batch) }
+        every { service.processCustomerSavingInBlmStep(any()) } returns savedCrmClsCustomerData
+        every { crmCustomerProviderSpi.createCrmRole(any()) } returns crmRoleResponse
+        every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+        every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+        every { batchRepositorySpi.save(any()) } answers { firstArg() }
 
+        service.apply(batch, listOf(customer))
+
+        verify(exactly = 1) { crmCustomerProviderSpi.createCrmRole(any()) }
+        verify(exactly = 1) {
+            recordStepEventRepositorySpi.save(match { it.stepName == RecordStepName.SF_CREATE_ROLE && it.stepStatus == RecordStepStatus.OK })
+        }
+        verify(exactly = 1) { batchRepositorySpi.save(loaderBatch = match { it.id == batch.id }) }
+    }
 }
-}
+
+        

@@ -1,0 +1,48 @@
+import io.mockk.*
+import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.Test
+import java.time.LocalDate
+
+class ImportCustomerServiceTest_TechLeadStyle {
+
+    private val recordStepEventRepositorySpi = mockk<RecordStepEventRepositorySpi>(relaxed = true)
+    private val crmClsCustomerDataRepositorySpi = mockk<CrmClsCustomerDataRepositorySpi>(relaxed = true)
+    private val crmCustomerProviderSpi = mockk<CrmCustomerProviderSpi>(relaxed = true)
+    private val batchRepositorySpi = mockk<BatchRepositoryForContactsSpi>(relaxed = true)
+
+    private val service = spyk(
+        ImportCustomerService(
+            recordStepEventRepositorySpi,
+            crmClsCustomerDataRepositorySpi,
+            crmCustomerProviderSpi,
+            batchRepositorySpi
+        )
+    )
+
+    @Test
+    fun `it should not reach CRM steps when customer has errorMessage`() = runBlocking {
+        // GIVEN
+        val batch = LoaderBatch(id = 1, reference = "batch-ref")
+        val customerWithError = CustomerPayload(
+            rowNumber = 1,
+            crmData = CrmData(
+                firstName = "Jean",
+                surname = "Dupont",
+                email = "jean.dupont@example.com",
+                country = "FR",
+                birthDate = LocalDate.of(1990, 1, 1)
+            ),
+            clsData = emptyMap(),
+            errorMessage = "Erreur détectée"
+        )
+
+        // WHEN
+        service.apply(batch, listOf(customerWithError))
+
+        // THEN (style Tech Lead)
+        verify(exactly = 0) { crmClsCustomerDataRepositorySpi.save(any()) }
+        verify(exactly = 0) { crmCustomerProviderSpi.createCrmCustomer(any()) }
+        verify(exactly = 1) { recordStepEventRepositorySpi.save(match { it.stepStatus == "KO" }) }
+        verify(exactly = 1) { service["updateBatchStatus"](batch) } // vérifie appel privé via spyk
+    }
+}

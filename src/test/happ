@@ -1,0 +1,267 @@
+import io.mockk.*
+import org.junit.jupiter.api.*
+import java.time.Instant
+import java.time.LocalDate
+
+class ImportCustomersServiceTest {
+
+    // === Mocks ===
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+    private val crmClsCustomerDataRepositorySpi: CrmClsCustomerDataRepositorySpi = mockk()
+    private val crmCustomerProviderSpi: CrmCustomerProviderSpi = mockk()
+    private val batchRepositorySpi: BatchRepositoryForContactsSpi = mockk()
+    private val referenceIdFactory: ReferenceIdFactory = mockk()
+    private val countryPrefixSpi: CountryPrefixSpi = mockk()
+    private val clockProvider: ClockProvider = mockk()
+    private val logger = mockk<Logger>(relaxed = true)
+
+    // === Service à tester ===
+    private val importCustomersService = ImportCustomersService(
+        recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+        crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+        crmCustomerProviderSpi = crmCustomerProviderSpi,
+        batchRepositorySpi = batchRepositorySpi,
+        logger = logger
+    )
+
+    // === Données communes ===
+    private val batchReference = ReferenceId(value = "HVrAZilzix")
+    private val countryCodeFR = CountryCode("FR")
+
+    private val defaultBatch = LoaderBatch(
+        id = "AAAAA",
+        reference = batchReference,
+        fileName = "a-file-name.csv",
+        triggeredBy = "u00001",
+        countryCode = countryCodeFR,
+        status = LoaderBatchStatus.RUNNING,
+        type = LoaderBatchType.CONTACTS,
+        startDate = Instant.now(),
+        endDate = Instant.now().plusSeconds(180),
+        totalContacts = 2
+    )
+
+    private val customerWithError = CustomerPayload(
+        rowNumber = 1,
+        crmData = CrmData(
+            firstName = "Jean",
+            surname = "Dupont",
+            email = "jean.dupont@example.com",
+            country = "FR",
+            mainCountry = "FR",
+            birthDate = LocalDate.of(1990, 1, 1)
+        ),
+        clsData = emptyMap(),
+        errorMessage = "Erreur détectée"
+    )
+
+    private val customerHappyPath = CustomerPayload(
+        rowNumber = 2,
+        crmData = CrmData(
+            firstName = "Alice",
+            surname = "Martin",
+            email = "alice.martin@example.com",
+            country = "FR",
+            mainCountry = "FR",
+            birthDate = LocalDate.of(1992, 5, 10)
+        ),
+        clsData = emptyMap(),
+        errorMessage = null
+    )
+
+    // === Setup global ===
+    @BeforeEach
+    fun setup() {
+        // ReferenceIdFactory mock
+        every { referenceIdFactory.generate() } returns ReferenceId("ROW123")
+        // Country prefix mock
+        every { countryPrefixSpi.getPrefixByCountryCode(countryCodeFR) } returns "FR"
+    }
+
+    // === KO Cases ===
+    @Nested
+    @DisplayName("KO Cases")
+    inner class KoCases {
+
+        @Test
+        fun `it should save KO event when customer has error message`() {
+            // GIVEN
+            every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+            every { batchRepositorySpi.save(any()) } answers { firstArg() }
+
+            // WHEN
+            importCustomersService.apply(defaultBatch, listOf(customerWithError))
+
+            // THEN
+            verify(exactly = 1) {
+                recordStepEventRepositorySpi.save(
+                    withArg {
+                        assert(it.batchId == defaultBatch.id)
+                        assert(it.rowNumber == customerWithError.rowNumber)
+                        assert(it.stepName == RecordStepName.BLM.name)
+                        assert(it.stepStatus == RecordStepStatus.KO.name)
+                        assert(it.stepMessage == "Erreur détectée")
+                    }
+                )
+            }
+            verify(exactly = 1) { batchRepositorySpi.save(any()) }
+            verify(exactly = 0) { crmCustomerProviderSpi.createCrmCustomer(any()) }
+        }
+    }
+
+    // === Happy Path Create ===
+    @Nested
+    @DisplayName("Create Cases")
+    inner class CreateCases {
+
+        @Test
+        fun `it should call CRM create when customer is valid`() {
+            // GIVEN
+            val crmResponse = CrmCustomerResponsePayload(
+                crmStatus = RecordStepStatus.OK,
+                crmMessage = "Customer created",
+                crmAccountId = "ACC123",
+                crmRoleId = null
+            )
+
+            every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+            every { crmCustomerProviderSpi.createCrmCustomer(any()) } returns crmResponse
+            every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+            every { batchRepositorySpi.save(any()) } answers { firstArg() }
+
+            // WHEN
+            importCustomersService.apply(defaultBatch, listOf(customerHappyPath))
+
+            // THEN
+            verify(exactly = 1) { crmCustomerProviderSpi.createCrmCustomer(any()) }
+            verify(atLeast = 1) { crmClsCustomerDataRepositorySpi.save(any()) }
+            verify(exactly = 1) {
+                recordStepEventRepositorySpi.save(
+                    withArg {
+                        assert(it.batchId == defaultBatch.id)
+                        assert(it.rowNumber == customerHappyPath.rowNumber)
+                        assert(it.stepName == RecordStepName.SF_CREATE.name)
+                        assert(it.stepStatus == RecordStepStatus.OK.name)
+                        assert(it.stepMessage == "Customer created")
+                    }
+                )
+            }
+        }
+    }
+
+    // === Update Cases ===
+    @Nested
+    @DisplayName("Update Cases")
+    inner class UpdateCases {
+
+        @Test
+        fun `it should call CRM update when customer has update role`() {
+            // GIVEN
+            val crmResponse = CrmCustomerResponsePayload(
+                crmStatus = RecordStepStatus.OK,
+                crmMessage = "Customer updated",
+                crmAccountId = "ACC456",
+                crmRoleId = null
+            )
+
+            val updatedCustomer = customerHappyPath.copy() // simulate update
+            every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+            every { crmCustomerProviderSpi.updateCrmCustomer(any()) } returns crmResponse
+            every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+            every { batchRepositorySpi.save(any()) } answers { firstArg() }
+
+            // WHEN
+            importCustomersService.processCustomerUpdateInCrmStep(
+                CrmClsCustomerData(
+                    batchId = defaultBatch.id!!,
+                    reconciliationId = ReconciliationId(batchReference, ReferenceId("ROW456")),
+                    rowNumber = 2,
+                    rowReference = ReferenceId("ROW456"),
+                    crmData = updatedCustomer.crmData,
+                    clsData = updatedCustomer.clsData,
+                    crmInsertedId = null
+                )
+            )
+
+            // THEN
+            verify(exactly = 1) { crmCustomerProviderSpi.updateCrmCustomer(any()) }
+            verify(atLeast = 1) { crmClsCustomerDataRepositorySpi.save(any()) }
+        }
+    }
+
+    // === Role Create Cases ===
+    @Nested
+    @DisplayName("Role Create Cases")
+    inner class RoleCreateCases {
+
+        @Test
+        fun `it should call CRM create role`() {
+            // GIVEN
+            val crmResponse = CrmCustomerResponsePayload(
+                crmStatus = RecordStepStatus.OK,
+                crmMessage = "Role created",
+                crmAccountId = null,
+                crmRoleId = "ROLE123"
+            )
+
+            every { crmClsCustomerDataRepositorySpi.save(any()) } answers { firstArg() }
+            every { crmCustomerProviderSpi.createCrmRole(any()) } returns crmResponse
+            every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+
+            val crmData = customerHappyPath.crmData
+            val crmClsCustomerData = CrmClsCustomerData(
+                batchId = defaultBatch.id!!,
+                reconciliationId = ReconciliationId(batchReference, ReferenceId("ROW789")),
+                rowNumber = 2,
+                rowReference = ReferenceId("ROW789"),
+                crmData = crmData,
+                clsData = customerHappyPath.clsData,
+                crmInsertedId = null
+            )
+
+            // WHEN
+            importCustomersService.processRoleCreationInCrmStep(crmClsCustomerData)
+
+            // THEN
+            verify(exactly = 1) { crmCustomerProviderSpi.createCrmRole(any()) }
+            verify(atLeast = 1) { crmClsCustomerDataRepositorySpi.save(any()) }
+        }
+    }
+
+    // === Role Update Cases ===
+    @Nested
+    @DisplayName("Role Update Cases")
+    inner class RoleUpdateCases {
+
+        @Test
+        fun `it should call CRM update role`() {
+            // GIVEN
+            val crmResponse = CrmCustomerResponsePayload(
+                crmStatus = RecordStepStatus.OK,
+                crmMessage = "Role updated",
+                crmAccountId = null,
+                crmRoleId = "ROLE456"
+            )
+
+            every { crmCustomerProviderSpi.updateCrmRole(any()) } returns crmResponse
+            every { recordStepEventRepositorySpi.save(any()) } answers { firstArg() }
+
+            val crmData = customerHappyPath.crmData
+            val crmClsCustomerData = CrmClsCustomerData(
+                batchId = defaultBatch.id!!,
+                reconciliationId = ReconciliationId(batchReference, ReferenceId("ROW999")),
+                rowNumber = 2,
+                rowReference = ReferenceId("ROW999"),
+                crmData = crmData,
+                clsData = customerHappyPath.clsData,
+                crmInsertedId = null
+            )
+
+            // WHEN
+            importCustomersService.processRoleUpdateInCrmStep(crmClsCustomerData)
+
+            // THEN
+            verify(exactly = 1) { crmCustomerProviderSpi.updateCrmRole(any()) }
+        }
+    }
+}

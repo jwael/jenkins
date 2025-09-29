@@ -1,0 +1,80 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+import java.time.Instant
+import kotlin.test.assertEquals
+
+class HandleClsCustomerFeedbackUseCaseTest {
+
+    private val crmClsCustomerDataRepositorySpi: CrmClsCustomerDataRepositorySpi = mockk()
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+    private val clockProvider: ClockProvider = mockk()
+
+    private lateinit var useCase: HandLeClsCustomerFeedbackUseCase
+
+    @BeforeEach
+    fun setup() {
+        clearMocks(crmClsCustomerDataRepositorySpi, recordStepEventRepositorySpi, clockProvider)
+        useCase = HandLeClsCustomerFeedbackUseCase(
+            crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+            recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+            clockProvider = clockProvider
+        )
+    }
+
+    @Test
+    @DisplayName("it should update step event when customer is found")
+    fun `it should update step event when customer is found`() {
+        // GIVEN
+        val reconciliationId = "RECON12345"
+        val feedbackPayload = ClsCustomerDataFeedbackPayload(
+            reconciliationId = reconciliationId,
+            status = "SUCCESS",
+            message = "Feedback OK"
+        )
+
+        val customerData = mockk<CrmClsCustomerData>(relaxed = true)
+        val now = Instant.now()
+
+        every { crmClsCustomerDataRepositorySpi.findByReconciliationId(reconciliationId) } returns customerData
+        every { clockProvider.now() } returns now
+
+        // WHEN
+        useCase.invoke(feedbackPayload)
+
+        // THEN
+        verify(exactly = 1) { crmClsCustomerDataRepositorySpi.findByReconciliationId(reconciliationId) }
+        verify(exactly = 1) {
+            recordStepEventRepositorySpi.save(match {
+                it.batchId == customerData.batchId &&
+                it.rowNumber == customerData.rowNumber &&
+                it.stepName == "CLS_FEEDBACK" &&
+                it.stepStatus == feedbackPayload.status &&
+                it.stepMessage == feedbackPayload.message &&
+                it.timestamp == now
+            })
+        }
+    }
+
+    @Test
+    @DisplayName("it should do nothing when customer is not found")
+    fun `it should do nothing when customer is not found`() {
+        // GIVEN
+        val reconciliationId = "RECON67890"
+        val feedbackPayload = ClsCustomerDataFeedbackPayload(
+            reconciliationId = reconciliationId,
+            status = "FAIL",
+            message = "Customer not found"
+        )
+
+        every { crmClsCustomerDataRepositorySpi.findByReconciliationId(reconciliationId) } returns null
+
+        // WHEN
+        useCase.invoke(feedbackPayload)
+
+        // THEN
+        verify(exactly = 1) { crmClsCustomerDataRepositorySpi.findByReconciliationId(reconciliationId) }
+        verify(exactly = 0) { recordStepEventRepositorySpi.save(any()) }
+    }
+}

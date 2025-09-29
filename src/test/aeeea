@@ -1,0 +1,24 @@
+import org.junit.jupiter.api.Test
+import kotlin.test.assertTrue
+import java.time.Instant
+import java.time.Duration
+
+class ClockProviderTest {
+
+    private val clockProvider = ClockProvider()
+
+    @Test
+    fun `now should return current instant`() {
+        // GIVEN
+        val beforeCall = Instant.now()
+
+        // WHEN
+        val result = clockProvider.now()
+
+        // THEN
+        val afterCall = Instant.now()
+        // Vérifie que le résultat est entre beforeCall et afterCall
+        assertTrue(result >= beforeCall && result <= afterCall, 
+            "ClockProvider.now() should return an Instant between the before and after call")
+    }
+}

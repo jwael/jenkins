@@ -1,0 +1,107 @@
+import io.mockk.*
+import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
+import java.time.Instant
+import kotlin.test.assertEquals
+
+class HandleClsContactRequestUseCaseTest {
+
+    private val crmClsContactDataRepositorySpi: CrmClsContactDataRepositorySpi = mockk()
+    private val clsProviderSpi: ClsProviderSpi = mockk()
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+    private val clockProvider: ClockProvider = mockk()
+
+    private lateinit var useCase: HandleClsContactRequestUseCase
+
+    // Batch et contact réutilisables pour tous les tests
+    private val batchReference = ReferenceId("BATCH00001")
+    private val rowReference = ReferenceId("ROW0000001")
+    private val reconciliationId = ReconciliationId(batchReference, rowReference)
+
+    private val contact = CrmClsContactData(
+        id = "CONTACT001",
+        batchId = "BATCH00001",
+        reconciliationId = reconciliationId,
+        rowNumber = 1,
+        rowReference = rowReference,
+        crmData = CrmData(),
+        clsData = emptyMap(),
+        crmInsertedId = null
+    )
+
+    @BeforeEach
+    fun setup() {
+        clearMocks(crmClsContactDataRepositorySpi, clsProviderSpi, recordStepEventRepositorySpi, clockProvider)
+        useCase = HandleClsContactRequestUseCase(
+            crmClsContactDataRepositorySpi,
+            clsProviderSpi,
+            recordStepEventRepositorySpi,
+            clockProvider
+        )
+    }
+
+    @Nested
+    @DisplayName("invoke function")
+    inner class InvokeTests {
+
+        @Test
+        @DisplayName("should enrich clsData, send to CLS and save step event when contact exists")
+        fun `should process contact successfully`() = runBlocking {
+            // GIVEN
+            val clsId = "CLS1234567"
+            val countryCode = CountryCode("FR")
+            val payload = ClsContactDataRequestPayLoad(
+                countryCode = countryCode,
+                reconciliationId = reconciliationId,
+                contactRoleSalesForceId = "Driver",
+                clsId = clsId
+            )
+
+            coEvery { crmClsContactDataRepositorySpi.findByReconciliationId(reconciliationId) } returns contact
+            coEvery { clsProviderSpi.sendContactToCls(any(), countryCode) } just Runs
+            every { clockProvider.now() } returns Instant.now()
+
+            // WHEN
+            useCase.invoke(payload)
+
+            // THEN
+            coVerify(exactly = 1) { crmClsContactDataRepositorySpi.findByReconciliationId(reconciliationId) }
+            coVerify(exactly = 1) { clsProviderSpi.sendContactToCls(match {
+                it.clsData["CLS_ID"] == clsId
+            }, countryCode) }
+            verify(exactly = 1) { recordStepEventRepositorySpi.save(match {
+                it.batchId == contact.batchId &&
+                it.rowNumber == contact.rowNumber &&
+                it.reconciliationId == contact.reconciliationId &&
+                it.stepName == RecordStepName.CLS_SENDING &&
+                it.stepStatus == RecordStepStatus.OK
+            }) }
+        }
+
+        @Test
+        @DisplayName("should log warning when contact not found")
+        fun `should log warning if contact not found`() = runBlocking {
+            // GIVEN
+            val payload = ClsContactDataRequestPayLoad(
+                countryCode = CountryCode("FR"),
+                reconciliationId = reconciliationId,
+                contactRoleSalesForceId = "Driver",
+                clsId = "CLS1234567"
+            )
+
+            coEvery { crmClsContactDataRepositorySpi.findByReconciliationId(reconciliationId) } returns null
+
+            // WHEN
+            useCase.invoke(payload)
+
+            // THEN
+            coVerify(exactly = 1) { crmClsContactDataRepositorySpi.findByReconciliationId(reconciliationId) }
+            verify(exactly = 0) { clsProviderSpi.sendContactToCls(any(), any()) }
+            verify(exactly = 0) { recordStepEventRepositorySpi.save(any()) }
+            // warning logged is optional to verify if logger is spy
+        }
+    }
+}

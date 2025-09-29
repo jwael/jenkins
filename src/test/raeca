@@ -1,0 +1,81 @@
+import io.mockk.every
+import io.mockk.mockk
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
+import org.springframework.web.multipart.MultipartFile
+import com.arval.blm.core.application.usecase.ImportCustomersUseCaseApi
+import com.arval.blm.infrastructure.controller.CaixaManualCustomerImportController
+import com.arval.blm.core.domain.model.Referenceld
+import com.arval.blm.infrastructure.dto.BatchReferenceDto
+
+class CaixaManualCustomerImportControllerTest {
+
+    private lateinit var importUseCase: ImportCustomersUseCaseApi
+    private lateinit var controller: CaixaManualCustomerImportController
+
+    @BeforeEach
+    fun setup() {
+        importUseCase = mockk(relaxed = true)
+        controller = CaixaManualCustomerImportController(importUseCase)
+    }
+
+    @Test
+    @DisplayName("Should import file with customCountry and return CREATED")
+    fun `import file returns CREATED`() {
+        // GIVEN
+        val fileMock: MultipartFile = mockk(relaxed = true)
+        val fakeReference = Referenceld("0123456789")
+        val userCountry = "FR"
+        val userVid = "user01"
+        val userRoles = listOf("ROLE_USER")
+        val customCountry = "FR"
+
+        every { importUseCase.invoke(any(), any(), any(), any()) } returns fakeReference
+
+        // WHEN
+        val response: ResponseEntity<BatchReferenceDto> = controller.importFile(
+            file = fileMock,
+            customCountry = customCountry,
+            userCountry = userCountry,
+            userVid = userVid,
+            userRoles = userRoles
+        )
+
+        // THEN
+        assertEquals(HttpStatus.CREATED, response.statusCode)
+        assertEquals("0123456789", response.body?.reference)
+    }
+
+    @Test
+    @DisplayName("Should handle exception and return BAD_REQUEST")
+    fun `import file handles exception`() {
+        // GIVEN
+        val fileMock: MultipartFile = mockk(relaxed = true)
+        val userCountry = "FR"
+        val userVid = "user01"
+        val userRoles = listOf("ROLE_USER")
+        val customCountry: String? = null
+
+        every { importUseCase.invoke(any(), any(), any(), any()) } throws IllegalArgumentException("Invalid file")
+
+        // WHEN
+        val response: ResponseEntity<BatchReferenceDto> = try {
+            controller.importFile(
+                file = fileMock,
+                customCountry = customCountry,
+                userCountry = userCountry,
+                userVid = userVid,
+                userRoles = userRoles
+            )
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity(BatchReferenceDto(e.message ?: ""), HttpStatus.BAD_REQUEST)
+        }
+
+        // THEN
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
+        assertEquals("Invalid file", response.body?.reference)
+    }
+}

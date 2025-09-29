@@ -1,0 +1,48 @@
+package com.arval.blm.core.domain.model.pagination
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+
+class PageDemandTest {
+
+    @Test
+    @DisplayName("it should correctly store page and size values")
+    fun shouldStorePageAndSize() {
+        // GIVEN
+        val page = 2
+        val size = 50
+
+        // WHEN
+        val pageDemand = PageDemand(page = page, size = size)
+
+        // THEN
+        assertEquals(page, pageDemand.page)
+        assertEquals(size, pageDemand.size)
+    }
+
+    @Test
+    @DisplayName("it should use equals and hashCode correctly for identical objects")
+    fun shouldRespectEqualsAndHashCode() {
+        // GIVEN
+        val demand1 = PageDemand(page = 1, size = 20)
+        val demand2 = PageDemand(page = 1, size = 20)
+
+        // THEN
+        assertEquals(demand1, demand2)
+        assertEquals(demand1.hashCode(), demand2.hashCode())
+    }
+
+    @Test
+    @DisplayName("it should correctly implement toString")
+    fun shouldHaveValidToString() {
+        // GIVEN
+        val pageDemand = PageDemand(page = 3, size = 15)
+
+        // WHEN
+        val result = pageDemand.toString()
+
+        // THEN
+        assertEquals("PageDemand(page=3, size=15)", result)
+    }
+}

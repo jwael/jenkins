@@ -1,0 +1,68 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.DisplayName
+import java.util.stream.Stream
+import javax.persistence.EntityManager
+import kotlin.test.assertEquals
+
+class ExportBatchFailedCustomersUseCaseTest {
+
+    private val crmClsCustomerDataJpaRepository: CrmClsCustomerDataJpaRepository = mockk()
+    private val entityManager: EntityManager = mockk(relaxed = true)
+
+    private lateinit var useCase: ExportBatchFailedCustomersUseCase
+
+    private val batchReference = ReferenceId("BATCH-123")
+
+    @BeforeEach
+    fun setup() {
+        clearMocks(crmClsCustomerDataJpaRepository, entityManager)
+        useCase = ExportBatchFailedCustomersUseCase(
+            crmClsCustomerDataJpaRepository = crmClsCustomerDataJpaRepository,
+            entityManager = entityManager
+        )
+    }
+
+    @Test
+    @DisplayName("it should return mapped domains when repository returns failed customers")
+    fun `it should stream and map failed customers`() {
+        // GIVEN
+        val entity1 = mockk<CrmClsCustomerDataEntity>()
+        val entity2 = mockk<CrmClsCustomerDataEntity>()
+        val domain1 = mockk<CrmClsCustomerData>()
+        val domain2 = mockk<CrmClsCustomerData>()
+
+        every { entity1.toDomain() } returns domain1
+        every { entity2.toDomain() } returns domain2
+        every { crmClsCustomerDataJpaRepository.streamFailedCustomers(batchReference) } returns Stream.of(entity1, entity2)
+
+        // WHEN
+        val result = useCase.execute(batchReference).toList()
+
+        // THEN
+        assertEquals(listOf(domain1, domain2), result)
+
+        verify(exactly = 1) { crmClsCustomerDataJpaRepository.streamFailedCustomers(batchReference) }
+        verify(exactly = 1) { entityManager.detach(entity1) }
+        verify(exactly = 1) { entityManager.detach(entity2) }
+        verify { entity1.toDomain() }
+        verify { entity2.toDomain() }
+    }
+
+    @Test
+    @DisplayName("it should return empty when repository returns no failed customers")
+    fun `it should return empty stream`() {
+        // GIVEN
+        every { crmClsCustomerDataJpaRepository.streamFailedCustomers(batchReference) } returns Stream.empty()
+
+        // WHEN
+        val result = useCase.execute(batchReference).toList()
+
+        // THEN
+        assertEquals(emptyList(), result)
+
+        verify(exactly = 1) { crmClsCustomerDataJpaRepository.streamFailedCustomers(batchReference) }
+        verify(exactly = 0) { entityManager.detach(any()) }
+    }
+}

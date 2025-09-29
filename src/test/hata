@@ -1,0 +1,73 @@
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.DisplayName
+import java.time.LocalDate
+import kotlin.test.assertEquals
+
+class ClsCustomerDataFeedbackPayLoadTest {
+
+    @Test
+    @DisplayName("fullMessage should return correct concatenation of scope and errorMessage")
+    fun `fullMessage returns correct string`() {
+        // GIVEN
+        val payload = ClsCustomerDataFeedbackPayLoad(
+            countryCode = CountryCode("FR"),
+            reconciliationId = ReconciliationId(
+                batchReference = ReferenceId("0123456789"),
+                rowReference = ReferenceId("ABCDEFGHIJ")
+            ),
+            scope = "TEST_SCOPE",
+            status = RecordStepStatus.KO,
+            errorMessage = "Erreur détectée"
+        )
+
+        // WHEN
+        val message = payload.fullMessage()
+
+        // THEN
+        assertEquals("TEST_SCOPE - Erreur détectée", message)
+    }
+
+    @Test
+    @DisplayName("fullMessage handles null errorMessage gracefully")
+    fun `fullMessage handles null errorMessage`() {
+        // GIVEN
+        val payload = ClsCustomerDataFeedbackPayLoad(
+            countryCode = CountryCode("FR"),
+            reconciliationId = ReconciliationId(
+                batchReference = ReferenceId("0123456789"),
+                rowReference = ReferenceId("ABCDEFGHIJ")
+            ),
+            scope = "TEST_SCOPE",
+            status = RecordStepStatus.OK,
+            errorMessage = null
+        )
+
+        // WHEN
+        val message = payload.fullMessage()
+
+        // THEN
+        assertEquals("TEST_SCOPE - null", message)
+    }
+
+    @Test
+    @DisplayName("fullMessage handles null scope gracefully")
+    fun `fullMessage handles null scope`() {
+        // GIVEN
+        val payload = ClsCustomerDataFeedbackPayLoad(
+            countryCode = CountryCode("FR"),
+            reconciliationId = ReconciliationId(
+                batchReference = ReferenceId("0123456789"),
+                rowReference = ReferenceId("ABCDEFGHIJ")
+            ),
+            scope = null,
+            status = RecordStepStatus.WARNING,
+            errorMessage = "Erreur détectée"
+        )
+
+        // WHEN
+        val message = payload.fullMessage()
+
+        // THEN
+        assertEquals("null - Erreur détectée", message)
+    }
+}

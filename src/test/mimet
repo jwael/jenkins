@@ -1,0 +1,65 @@
+import io.mockk.*
+import io.mockk.impl.annotations.MockK
+import io.micrometer.core.instrument.Counter
+import io.micrometer.core.instrument.DistributionSummary
+import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.Timer
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import java.time.Duration
+import java.util.concurrent.TimeUnit
+
+class MicroMeterAdapterTest {
+
+    @MockK
+    lateinit var meterRegistry: MeterRegistry
+
+    private lateinit var microMeterAdapter: MicroMeterAdapter
+
+    @BeforeEach
+    fun setup() {
+        MockKAnnotations.init(this, relaxed = true)
+        microMeterAdapter = MicroMeterAdapter(meterRegistry)
+    }
+
+    @Test
+    fun `should increment counter with correct name and tags`() {
+        // GIVEN
+        val name = "testCounter"
+        val tags = mapOf("env" to "test")
+
+        // WHEN
+        microMeterAdapter.incrementCounter(name, tags)
+
+        // THEN
+        verify { meterRegistry.counter("$name.counter", any()) }
+    }
+
+    @Test
+    fun `should record time with correct name, duration, and tags`() {
+        // GIVEN
+        val name = "testTimer"
+        val duration = Duration.ofSeconds(5)
+        val tags = mapOf("env" to "test")
+
+        // WHEN
+        microMeterAdapter.recordTime(name, duration, tags)
+
+        // THEN
+        verify { meterRegistry.timer("$name.timer", any()) }
+    }
+
+    @Test
+    fun `should record summary with correct name, value, and tags`() {
+        // GIVEN
+        val name = "testSummary"
+        val value = 123.0
+        val tags = mapOf("env" to "test")
+
+        // WHEN
+        microMeterAdapter.recordSummary(name, value, tags)
+
+        // THEN
+        verify { meterRegistry.summary("$name.summary", any()) }
+    }
+}

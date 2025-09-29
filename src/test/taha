@@ -1,0 +1,69 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.DisplayName
+import java.time.Instant
+import kotlin.test.assertEquals
+
+class BatchEventSummaryTest {
+
+    private val referenceId = ReferenceId("0123456789") // 10 caractères obligatoires
+    private val countryCode = CountryCode("FR")         // code ISO valide
+    private val triggeredBy = "user01"
+
+    private lateinit var batch: LoaderBatch
+    private lateinit var summary: BatchEventSummary
+
+    @BeforeEach
+    fun setup() {
+        batch = LoaderBatch(
+            id = "AAAAA",
+            reference = referenceId,
+            fileName = "contacts.csv",
+            triggeredBy = triggeredBy,
+            countryCode = countryCode,
+            status = LoaderBatchStatus.RUNNING,
+            type = LoaderBatchType.CONTACTS,
+            startDate = Instant.now(),
+            endDate = Instant.now().plusSeconds(3600),
+            totalContacts = 100
+        )
+
+        // Création d'un exemple de BatchEventSummary
+        summary = BatchEventSummary(
+            batchReference = referenceId,
+            totalContacts = batch.totalContacts,
+            batchStatus = LoaderBatchStatus.RUNNING,
+            successCount = 60,
+            warningsCount = 20,
+            errorsCount = 20
+        )
+    }
+
+    @Test
+    @DisplayName("It should correctly calculate progressPercentage")
+    fun `progressPercentage should calculate correctly`() {
+        assertEquals(80, summary.progressPercentage) // (success + errors) / total * 100
+    }
+
+    @Test
+    @DisplayName("It should convert BatchEventSummary to LoaderBatch overview")
+    fun `toImportOverview should map correctly`() {
+        val overview = summary.toImportOverview()
+
+        assertEquals(summary.batchReference, overview.batchReference)
+        assertEquals(summary.totalContacts, overview.totalContacts)
+        assertEquals(summary.batchStatus, overview.batchStatus)
+        assertEquals(summary.successCount, overview.successCount)
+        assertEquals(summary.warningsCount, overview.warningsCount)
+        assertEquals(summary.errorsCount, overview.errorsCount)
+    }
+
+    @Test
+    @DisplayName("LoaderBatch duration should compute correctly")
+    fun `duration should compute difference between start and end`() {
+        val duration = batch.duration()
+        assert(duration != null)
+        assert(duration!!.seconds == 3600L)
+    }
+}

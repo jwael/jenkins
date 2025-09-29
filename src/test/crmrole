@@ -1,0 +1,94 @@
+package com.arval.blm.core.domain.model.crm
+
+import com.arval.blm.core.domain.model.ReconciliationId
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+
+class CriRoleDataTest {
+
+    @Test
+    @DisplayName("it should correctly store all values")
+    fun shouldStoreAllValues() {
+        // GIVEN
+        val reconciliationId = ReconciliationId.parse("1234567890")
+        val batchId = "BATCH123456"
+        val rowNumber = 5
+        val crmCustomerData = CrmCustomerData(
+            salesforceAccountId = "SF_ACC_001",
+            country = "FR"
+        )
+        val crmContactData = CrmContactData(
+            salesforceContactId = "SF_CONTACT_001",
+            email = "test@email.com"
+        )
+
+        // WHEN
+        val roleData = CriRoleData(
+            reconciliationid = reconciliationId,
+            batchid = batchId,
+            rowNumber = rowNumber,
+            crCustomerData = crmCustomerData,
+            crmContactData = crmContactData
+        )
+
+        // THEN
+        assertEquals(reconciliationId, roleData.reconciliationid)
+        assertEquals(batchId, roleData.batchid)
+        assertEquals(rowNumber, roleData.rowNumber)
+        assertEquals(crmCustomerData, roleData.crCustomerData)
+        assertEquals(crmContactData, roleData.crmContactData)
+    }
+
+    @Test
+    @DisplayName("it should allow null values for optional crm data")
+    fun shouldAllowNullOptionalValues() {
+        // GIVEN
+        val reconciliationId = ReconciliationId.parse("0987654321")
+
+        // WHEN
+        val roleData = CriRoleData(
+            reconciliationid = reconciliationId,
+            batchid = "BATCH999",
+            rowNumber = 10
+        )
+
+        // THEN
+        assertNull(roleData.crCustomerData)
+        assertNull(roleData.crmContactData)
+    }
+
+    @Test
+    @DisplayName("it should respect equals and hashCode")
+    fun shouldRespectEqualsAndHashCode() {
+        // GIVEN
+        val reconciliationId = ReconciliationId.parse("1234567890")
+        val roleData1 = CriRoleData(reconciliationId, "BATCH001", 1)
+        val roleData2 = CriRoleData(reconciliationId, "BATCH001", 1)
+        val roleData3 = CriRoleData(reconciliationId, "BATCH002", 2)
+
+        // THEN
+        assertEquals(roleData1, roleData2)
+        assertEquals(roleData1.hashCode(), roleData2.hashCode())
+        assertNotEquals(roleData1, roleData3)
+    }
+
+    @Test
+    @DisplayName("it should generate correct toString")
+    fun shouldHaveValidToString() {
+        // GIVEN
+        val reconciliationId = ReconciliationId.parse("1111111111")
+        val roleData = CriRoleData(
+            reconciliationid = reconciliationId,
+            batchid = "BATCHXYZ",
+            rowNumber = 3
+        )
+
+        // WHEN
+        val result = roleData.toString()
+
+        // THEN
+        assertTrue(result.contains("BATCHXYZ"))
+        assertTrue(result.contains("rowNumber=3"))
+    }
+}

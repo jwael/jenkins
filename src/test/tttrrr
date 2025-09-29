@@ -1,0 +1,102 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
+import java.time.Instant
+import kotlin.test.assertEquals
+
+// --- PageResult pour encapsuler le résultat paginé ---
+data class PageResult<T>(
+    val items: List<T>,
+    val page: Int,
+    val size: Int,
+    val total: Int
+)
+
+class GetBatchEventsUseCaseTest {
+
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk()
+    private lateinit var useCase: GetBatchEventsUseCase
+
+    // --- Événements réutilisables pour les tests ---
+    private val batchId = "BATCH00001"
+    private val record1 = RecordStepEvent(
+        id = null,
+        batchId = batchId,
+        rowNumber = 1,
+        reconciliationId = null,
+        stepName = RecordStepName.BLM,
+        stepStatus = RecordStepStatus.OK,
+        stepMessage = "OK",
+        timestamp = Instant.now()
+    )
+    private val record2 = RecordStepEvent(
+        id = null,
+        batchId = batchId,
+        rowNumber = 2,
+        reconciliationId = null,
+        stepName = RecordStepName.BLM,
+        stepStatus = RecordStepStatus.KO,
+        stepMessage = "Erreur détectée",
+        timestamp = Instant.now()
+    )
+
+    @BeforeEach
+    fun setup() {
+        clearMocks(recordStepEventRepositorySpi)
+        useCase = GetBatchEventsUseCase(recordStepEventRepositorySpi)
+    }
+
+    @Nested
+    @DisplayName("execute function")
+    inner class ExecuteTests {
+
+        @Test
+        @DisplayName("should return a page of events matching the criteria")
+        fun `should return events`() {
+            // GIVEN
+            val pageDemand = PageDemand(page = 1, size = 10)
+            val criteria = BatchEventsCriteria(batchReference = ReferenceId("BATCH00001"))
+
+            every { recordStepEventRepositorySpi.findBy(pageDemand, criteria) } returns PageResult(
+                items = listOf(record1, record2),
+                page = pageDemand.page,
+                size = pageDemand.size,
+                total = 2
+            )
+
+            // WHEN
+            val result = useCase.execute(pageDemand, criteria)
+
+            // THEN
+            assertEquals(2, result.items.size)
+            assertEquals(record1, result.items[0])
+            assertEquals(record2, result.items[1])
+
+            verify(exactly = 1) { recordStepEventRepositorySpi.findBy(pageDemand, criteria) }
+        }
+
+        @Test
+        @DisplayName("should return empty page if repository returns no events")
+        fun `should return empty page`() {
+            // GIVEN
+            val pageDemand = PageDemand(page = 1, size = 10)
+            val criteria = BatchEventsCriteria(batchReference = ReferenceId("BATCH00002"))
+
+            every { recordStepEventRepositorySpi.findBy(pageDemand, criteria) } returns PageResult(
+                items = emptyList(),
+                page = pageDemand.page,
+                size = pageDemand.size,
+                total = 0
+            )
+
+            // WHEN
+            val result = useCase.execute(pageDemand, criteria)
+
+            // THEN
+            assertEquals(0, result.items.size)
+            verify(exactly = 1) { recordStepEventRepositorySpi.findBy(pageDemand, criteria) }
+        }
+    }
+}

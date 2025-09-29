@@ -1,0 +1,112 @@
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+import java.time.Instant
+import java.time.format.DateTimeFormatter
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+
+class CrmCustomerRequestTest {
+
+    private lateinit var crmCustomerRequestData: CrmCustomerRequestData
+    private lateinit var crmCustomerRequest: CrmCustomerRequest
+
+    private val dateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+
+    @BeforeEach
+    fun setup() {
+        // Création d'un payload complet
+        crmCustomerRequestData = CrmCustomerRequestData(
+            salutation = "Mr",
+            firstName = "John",
+            lastName = "Doe",
+            birthDate = "1980-01-01",
+            mainCountry = "FR",
+            otherPhone = "0123456789",
+            phone = "0987654321",
+            mobilePhone = "0612345678",
+            email = "john.doe@example.com",
+            gender = "M",
+            otherEmail = "other@example.com",
+            language = "FR",
+            personalIdentificationNumber = "123456789",
+            prefix = "Mr",
+            initials = "JD",
+            jobTitle = "Developer",
+            vipFlag = false,
+            vulnerable = false,
+            legalFirstName = "John",
+            legalLastName = "Doe",
+            addresses = CustomerAddresses(
+                primary = CustomerAddress(
+                    streetNumber = "10",
+                    street = "Main Street",
+                    city = "Paris",
+                    province = "Ile-de-France",
+                    zipPostalCode = "75001",
+                    country = "FR"
+                ),
+                secondary = CustomerAddress(
+                    streetNumber = "20",
+                    street = "Second Street",
+                    city = "Lyon",
+                    province = "Auvergne-Rhone-Alpes",
+                    zipPostalCode = "69001",
+                    country = "FR"
+                )
+            ),
+            customer = Customer(
+                branchCode = "B001",
+                branchName = "Main Branch",
+                partnerAccountId = "PA123",
+                email = "branch@example.com",
+                firstName = "Branch",
+                lastName = "Manager",
+                network = "Network1",
+                phone = "0123456789"
+            ),
+            roles = listOf(
+                CrmRole(
+                    startDate = "2025-01-01",
+                    roleCode = "ADMIN",
+                    kycType = "TYPE1",
+                    authorizedSignature = "John Doe",
+                    isMainContact = true
+                )
+            )
+        )
+
+        // Création de la requête complète
+        crmCustomerRequest = CrmCustomerRequest(
+            correlationId = "CORR-123456",
+            data = crmCustomerRequestData
+        )
+    }
+
+    @Test
+    @DisplayName("it should create a CrmCustomerRequest with full data")
+    fun `create CrmCustomerRequest with full data`() {
+        // THEN
+        assertNotNull(crmCustomerRequest)
+        assertEquals("CORR-123456", crmCustomerRequest.correlationId)
+        assertNotNull(crmCustomerRequest.data)
+        assertEquals("John", crmCustomerRequest.data.firstName)
+        assertEquals("Doe", crmCustomerRequest.data.lastName)
+        assertEquals("FR", crmCustomerRequest.data.mainCountry)
+        assertEquals(1, crmCustomerRequest.data.roles?.size)
+        assertEquals("ADMIN", crmCustomerRequest.data.roles?.first()?.roleCode)
+    }
+
+    @Test
+    @DisplayName("it should correctly format birth date")
+    fun `format birth date`() {
+        assertEquals("1980-01-01", crmCustomerRequest.data.birthDate)
+    }
+
+    @Test
+    @DisplayName("it should contain addresses and customer info")
+    fun `check addresses and customer info`() {
+        assertEquals("10", crmCustomerRequest.data.addresses?.primary?.streetNumber)
+        assertEquals("B001", crmCustomerRequest.data.customer?.branchCode)
+    }
+}

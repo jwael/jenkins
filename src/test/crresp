@@ -56,4 +56,26 @@ class CrmCustomerResponseTest {
     fun `is Caixa CRM update`() {
         assertTrue(crmCustomerResponse.isCaixaCrmUpdate())
     }
+
+Test
+    @DisplayName("isCaixaCrmUpdate should return true only for KO and null accountId")
+    fun `isCaixaCrmUpdate returns true correctly`() {
+        val crmResponseKO = CrmCustomerResponse(
+            accountId = null,
+            message = "Error creating customer",
+            status = "KO",
+            roles = listOf(role)
+        )
+        assertTrue(crmResponseKO.isCaixaCrmUpdate())
+    }
+
+    // Extension function pour conversion en payload
+    private fun CrmCustomerResponse.toPayload(): CrmCustomerResponsePayload {
+        val crmStatusEnum = RecordStepStatus.valueOf(this.status)
+        return CrmCustomerResponsePayload(
+            crmStatus = crmStatusEnum,
+            crmMessage = this.message,
+            crmAccountId = this.accountId,
+            crmRoleId = this.roles?.firstOrNull()?.roleId
+
 }

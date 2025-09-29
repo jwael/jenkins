@@ -1,0 +1,54 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.DisplayName
+import java.time.Instant
+import kotlin.test.assertEquals
+
+class BatchEventSummaryTest {
+
+    private val referenceId = ReferenceId("0123456789") // 10 caractères
+    private val countryCode = CountryCode("FR")         // code ISO valide
+    private val triggeredBy = "user01"
+    private val batchType = LoaderBatchType.CONTACTS
+    private val date = Instant.now()
+
+    private lateinit var stepsDetails: List<StepDetails>
+    private lateinit var summary: BatchEventSummary
+
+    @BeforeEach
+    fun setup() {
+        stepsDetails = listOf(
+            StepDetails("Step1", RecordStepStatus.OK, 30),
+            StepDetails("Step2", RecordStepStatus.WARNING, 20),
+            StepDetails("Step3", RecordStepStatus.KO, 10)
+        )
+
+        summary = BatchEventSummary(
+            batchReference = referenceId,
+            totalContacts = 60,
+            batchStatus = LoaderBatchStatus.RUNNING,
+            triggeredBy = triggeredBy,
+            type = batchType,
+            countryCode = countryCode,
+            date = date,
+            stepsDetails = stepsDetails
+        )
+    }
+
+    @Test
+    @DisplayName("It should correctly calculate progressPercentage")
+    fun `progressPercentage should calculate correctly`() {
+        val expectedProgress = ((30 + 10).toDouble() / 60 * 100).toInt()
+        assertEquals(expectedProgress, summary.progressPercentage)
+    }
+
+    @Test
+    @DisplayName("It should return correct steps summary")
+    fun `steps summary should match`() {
+        assertEquals(stepsDetails, summary.stepsDetails)
+        assertEquals(batchType, summary.type)
+        assertEquals(triggeredBy, summary.triggeredBy)
+        assertEquals(countryCode, summary.countryCode)
+    }
+}

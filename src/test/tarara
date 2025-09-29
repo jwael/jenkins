@@ -1,0 +1,88 @@
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+
+class CrmRoleDataTest {
+
+    private lateinit var roleDataFull: CrmRoleData
+    private lateinit var roleDataNoCustomer: CrmRoleData
+    private lateinit var roleDataNoContact: CrmRoleData
+
+    @BeforeEach
+    fun setup() {
+        // TODO: valeurs réalistes ou placeholders
+        val reconciliationId = ReconciliationId.parse("0123456789_ABCDEFGHIJ")
+        val batchIdValid = "BATCH00001" // longueur = 10
+        val rowNumber = 1
+
+        val crmCustomerData = CrmCustomerData(
+            id = "CUST001",
+            batchId = batchIdValid,
+            reconciliationId = reconciliationId,
+            rowNumber = rowNumber,
+            rowReference = ReferenceId("ROW000001"),
+            crmData = CrmData(), // TODO: ajouter valeurs par défaut si nécessaire
+            clsData = mapOf("key" to "value"),
+            crmInsertedId = "CRM001"
+        )
+
+        val crmContactData = CrmContactData(
+            id = "CONT001",
+            batchId = batchIdValid,
+            reconciliationId = reconciliationId,
+            rowNumber = rowNumber,
+            rowReference = ReferenceId("ROW000002"),
+            crmData = CrmData(), // TODO: ajouter valeurs par défaut si nécessaire
+            clsData = mapOf("contactKey" to "contactValue"),
+            crmInsertedId = "CRM002"
+        )
+
+        // GIVEN: CrmRoleData avec toutes les données
+        roleDataFull = CrmRoleData(
+            reconciliationId = reconciliationId,
+            batchid = batchIdValid,
+            rowNumber = rowNumber,
+            crCustomerData = crmCustomerData,
+            crmContactData = crmContactData
+        )
+
+        // GIVEN: CrmRoleData sans customer
+        roleDataNoCustomer = CrmRoleData(
+            reconciliationId = reconciliationId,
+            batchid = batchIdValid,
+            rowNumber = rowNumber,
+            crCustomerData = null,
+            crmContactData = crmContactData
+        )
+
+        // GIVEN: CrmRoleData sans contact
+        roleDataNoContact = CrmRoleData(
+            reconciliationId = reconciliationId,
+            batchid = batchIdValid,
+            rowNumber = rowNumber,
+            crCustomerData = crmCustomerData,
+            crmContactData = null
+        )
+    }
+
+    @Test
+    fun `full role data holds all values`() {
+        assertEquals("BATCH00001", roleDataFull.batchid)
+        assertEquals(1, roleDataFull.rowNumber)
+        assertEquals("CUST001", roleDataFull.crCustomerData?.id)
+        assertEquals("CONT001", roleDataFull.crmContactData?.id)
+    }
+
+    @Test
+    fun `role data with null customer`() {
+        assertNull(roleDataNoCustomer.crCustomerData)
+        assertEquals("CONT001", roleDataNoCustomer.crmContactData?.id)
+    }
+
+    @Test
+    fun `role data with null contact`() {
+        assertNull(roleDataNoContact.crmContactData)
+        assertEquals("CUST001", roleDataNoContact.crCustomerData?.id)
+    }
+}

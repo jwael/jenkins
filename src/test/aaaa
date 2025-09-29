@@ -1,57 +1,67 @@
-package com.arval.blm.core.domain.model.batch
 
-import com.arval.blm.core.domain.ReferenceId
-import com.arval.blm.core.domain.model.RecordStepName
-import com.arval.blm.core.domain.model.RecordStepStatus
-import com.arval.blm.core.domain.model.StepDetails
+        import io.mockk.every
+import io.mockk.mockk
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
-import java.time.Instant
+import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
+import org.springframework.web.multipart.MultipartFile
+import com.arval.blm.core.application.usecase.ImportCustomersUseCaseApi
+import com.arval.blm.infrastructure.controller.CaixaCustomerImportController
+import com.arval.blm.core.domain.model.Referenceld
 
-class BatchImportOverviewTest {
+class CaixaCustomerImportControllerTest {
+
+    private lateinit var importUseCase: ImportCustomersUseCaseApi
+    private lateinit var controller: CaixaCustomerImportController
+
+    @BeforeEach
+    fun setup() {
+        // Mock du UseCase
+        importUseCase = mockk(relaxed = true)
+
+        // Injection dans le controller
+        controller = CaixaCustomerImportController(importUseCase)
+    }
 
     @Test
-    @DisplayName("it should correctly calculate progress percentage and counts from BatchEventSummary")
-    fun shouldMapBatchEventSummaryToImportOverview() {
+    @DisplayName("Should import file and return CREATED")
+    fun `import file returns CREATED`() {
         // GIVEN
-        val batchReference = ReferenceId("1234567890") // length = 10 ok
-        val stepsDetails = listOf(
-            StepDetails(stepName = RecordStepName.SF_CREATE, stepStatus = RecordStepStatus.OK, totalCount = 5),
-            StepDetails(stepName = RecordStepName.SF_UPDATE, stepStatus = RecordStepStatus.WARNING, totalCount = 3),
-            StepDetails(stepName = RecordStepName.ODS, stepStatus = RecordStepStatus.KO, totalCount = 2),
-            StepDetails(stepName = RecordStepName.BLM, stepStatus = RecordStepStatus.OK, totalCount = 1)
-        )
+        val fileMock: MultipartFile = mockk(relaxed = true)
+        val fakeReference = Referenceld("0123456789")
 
-        val summary = BatchEventSummary(
-            batchReference = batchReference,
-            totalContacts = 20,
-            batchStatus = LoaderBatchStatus.RUNNING,
-            triggeredBy = "user123",
-            type = LoaderBatchType.CONTACTS,
-            countryCode = com.arval.blm.core.domain.model.CountryCode("FR"),
-            date = Instant.now(),
-            stepsDetails = stepsDetails
-        )
+        // Mock du comportement du UseCase
+        every { importUseCase.invoke(any(), any(), any(), any()) } returns fakeReference
 
         // WHEN
-        val overview = summary.toImportOverview()
+        val response: ResponseEntity<String> = controller.importFile(fileMock)
 
         // THEN
-        assertEquals(batchReference, overview.batchReference)
-        assertEquals(20, overview.totalContacts)
-        assertEquals(LoaderBatchStatus.RUNNING, overview.batchStatus)
+        assertEquals(HttpStatus.CREATED, response.statusCode)
+        assertEquals("0123456789", response.body)
+    }
 
-        // successCount = 5 (SF_CREATE OK) + 1 (BLM OK) = 6
-        assertEquals(6, overview.successCount)
+    @Test
+    @DisplayName("Should handle exception and return BAD_REQUEST")
+    fun `import file handles exception`() {
+        // GIVEN
+        val fileMock: MultipartFile = mockk(relaxed = true)
 
-        // warningsCount = 3 (SF_UPDATE WARNING)
-        assertEquals(3, overview.warningsCount)
+        // Simuler une exception dans le UseCase
+        every { importUseCase.invoke(any(), any(), any(), any()) } throws IllegalArgumentException("Invalid file")
 
-        // errorsCount = 2 (ODS KO)
-        assertEquals(2, overview.errorsCount)
+        // WHEN
+        val response: ResponseEntity<String> = try {
+            controller.importFile(fileMock)
+        } catch (e: IllegalArgumentException) {
+            ResponseEntity(e.message, HttpStatus.BAD_REQUEST)
+        }
 
-        // progress = ((6 + 2) / 20) * 100 = 40%
-        assertEquals(40, overview.progressPercentage)
+        // THEN
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
+        assertEquals("Invalid file", response.body)
     }
 }

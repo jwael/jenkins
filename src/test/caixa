@@ -1,0 +1,50 @@
+package com.arval.blm.application.controller
+
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
+import org.springframework.web.multipart.MultipartFile
+import kotlin.test.assertEquals
+
+class FaixaCustomerImportControllerTest {
+
+    // Mock du service interne que le controller appelle
+    private val importService: CustomerImportService = mockk(relaxed = true)
+
+    // Controller à tester
+    private val controller = FaixaCustomerImportController(importService)
+
+    @Test
+    @DisplayName("Should return 201 when file import is successful")
+    fun `importFile returns 201 on success`() {
+        // GIVEN
+        val file: MultipartFile = mockk(relaxed = true)
+        every { importService.importFile(file) } returns Unit // Mock de l'action
+
+        // WHEN
+        val response: ResponseEntity<String> = controller.importFile(file)
+
+        // THEN
+        assertEquals(HttpStatus.CREATED, response.statusCode)
+        verify(exactly = 1) { importService.importFile(file) }
+    }
+
+    @Test
+    @DisplayName("Should return 400 when file import fails with exception")
+    fun `importFile returns 400 on bad request`() {
+        // GIVEN
+        val file: MultipartFile = mockk(relaxed = true)
+        every { importService.importFile(file) } throws IllegalArgumentException("Invalid file")
+
+        // WHEN
+        val response: ResponseEntity<String> = controller.importFile(file)
+
+        // THEN
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
+        verify(exactly = 1) { importService.importFile(file) }
+    }
+}

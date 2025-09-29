@@ -1,0 +1,46 @@
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.DisplayName
+import kotlin.test.assertEquals
+
+class BatchEventSummaryTest {
+
+    @Test
+    @DisplayName("progressPercentage should calculate correctly")
+    fun `progressPercentage calculation`() {
+        val summary = BatchEventSummary(
+            batchReference = ReferenceId("0123456789"),
+            totalContacts = 100,
+            batchStatus = LoaderBatchStatus.RUNNING,
+            successCount = 70,
+            warningsCount = 20,
+            errorsCount = 10
+        )
+
+        // progress = ((success + errors) / totalContacts) * 100
+        val expectedProgress = ((70 + 10).toDouble() / 100 * 100).toInt()
+        assertEquals(expectedProgress, summary.progressPercentage)
+    }
+
+    @Test
+    @DisplayName("toImportOverview maps fields correctly")
+    fun `toImportOverview mapping`() {
+        val stepsDetails = listOf<RecordStepEvent>() // si tu veux, tu peux mocker ou créer des objets de test
+        val summary = BatchEventSummary(
+            batchReference = ReferenceId("0123456789"),
+            totalContacts = 100,
+            batchStatus = LoaderBatchStatus.RUNNING,
+            successCount = 70,
+            warningsCount = 20,
+            errorsCount = 10
+        )
+
+        val overview = summary.toImportOverview(stepsDetails)
+
+        assertEquals(summary.batchReference, overview.batchReference)
+        assertEquals(summary.totalContacts, overview.totalContacts)
+        assertEquals(summary.batchStatus, overview.batchStatus)
+        assertEquals(70, overview.successCount) // en l’absence de vrais stepsDetails
+        assertEquals(20, overview.warningsCount)
+        assertEquals(10, overview.errorsCount)
+    }
+}

@@ -1,0 +1,67 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+import java.time.Instant
+import kotlin.test.assertEquals
+
+class ImportContactsUseCaseTest {
+
+    private val referenceIdFactory: ReferenceIdFactory = mockk()
+    private val batchRepositorySpi: BatchRepositoryForContactsSpi = mockk()
+    private val clockProvider: ClockProvider = mockk()
+    private val importContactService: ImportContactService = mockk()
+
+    private lateinit var useCase: ImportContactsUseCase
+
+    private val countryCode = CountryCode("FR")
+    private val userId = "user123"
+    private val fileName = "contacts.csv"
+
+    private val contact1 = ContactPayload(rowNumber = 1, crmData = CrmData(), clsData = emptyMap())
+    private val contact2 = ContactPayload(rowNumber = 2, crmData = CrmData(), clsData = emptyMap())
+    private val contacts = listOf(contact1, contact2)
+
+    private val referenceId = ReferenceId("BATCH00001") // 10 caractères
+    private val createdBatch = LoaderBatch(
+        reference = referenceId,
+        fileName = fileName,
+        triggeredBy = userId,
+        countryCode = countryCode,
+        startDate = Instant.now(),
+        totalContacts = contacts.size,
+        type = LoaderBatchType.CONTACTS,
+        id = "AAAAA"
+    )
+
+    @BeforeEach
+    fun setup() {
+        clearMocks(referenceIdFactory, batchRepositorySpi, clockProvider, importContactService)
+        useCase = ImportContactsUseCase(
+            referenceIdFactory = referenceIdFactory,
+            batchRepositorySpi = batchRepositorySpi,
+            clockProvider = clockProvider,
+            importContactService = importContactService
+        )
+    }
+
+    @Test
+    @DisplayName("it should create batch and apply importContactService")
+    fun `it should create batch and call apply`() {
+        // GIVEN
+        every { referenceIdFactory.generate() } returns referenceId
+        every { clockProvider.now() } returns Instant.now()
+        every { batchRepositorySpi.save(any()) } returns createdBatch
+        every { importContactService.apply(any(), any()) } just Runs
+
+        // WHEN
+        val result = useCase.invoke(contacts, countryCode, fileName, userId)
+
+        // THEN
+        assertEquals(referenceId, result)
+
+        verify(exactly = 1) { referenceIdFactory.generate() }
+        verify(exactly = 1) { batchRepositorySpi.save(match { it.reference == referenceId && it.fileName == fileName && it.totalContacts == contacts.size }) }
+        verify(exactly = 1) { importContactService.apply(createdBatch, contacts) }
+    }
+}

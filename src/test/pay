@@ -1,0 +1,80 @@
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.DisplayName
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.test.assertFalse
+
+class CrmCustomerResponsePayloadTest {
+
+    @Test
+    @DisplayName("it should return message with Salesforce Account ID when status is OK")
+    fun `should return Salesforce Account ID message when OK`() {
+        // GIVEN
+        val payload = CrmCustomerResponsePayload(
+            crmStatus = RecordStepStatus.OK,
+            crmMessage = "Some error",
+            crmAccountId = "SF12345678",
+            crmRoleId = "Role123"
+        )
+
+        // WHEN
+        val message = payload.getMessage()
+
+        // THEN
+        assertEquals("Salesforce Account ID: SF12345678", message)
+    }
+
+    @Test
+    @DisplayName("it should return crmMessage when status is not OK")
+    fun `should return crmMessage when status not OK`() {
+        val payload = CrmCustomerResponsePayload(
+            crmStatus = RecordStepStatus.KO,
+            crmMessage = "Error occurred",
+            crmAccountId = "SF12345678",
+            crmRoleId = "Role123"
+        )
+
+        val message = payload.getMessage()
+
+        assertEquals("Error occurred", message)
+    }
+
+    @Test
+    @DisplayName("isToUpdate should return true when status is WARNING and crmAccountId is not blank")
+    fun `isToUpdate returns true for WARNING and non-blank crmAccountId`() {
+        val payload = CrmCustomerResponsePayload(
+            crmStatus = RecordStepStatus.WARNING,
+            crmMessage = null,
+            crmAccountId = "SF99999999",
+            crmRoleId = "RoleXYZ"
+        )
+
+        assertTrue(payload.isToUpdate())
+    }
+
+    @Test
+    @DisplayName("isToUpdate should return false when status is not WARNING")
+    fun `isToUpdate returns false when status not WARNING`() {
+        val payload = CrmCustomerResponsePayload(
+            crmStatus = RecordStepStatus.OK,
+            crmMessage = null,
+            crmAccountId = "SF99999999",
+            crmRoleId = "RoleXYZ"
+        )
+
+        assertFalse(payload.isToUpdate())
+    }
+
+    @Test
+    @DisplayName("isToUpdate should return false when crmAccountId is blank")
+    fun `isToUpdate returns false when crmAccountId is blank`() {
+        val payload = CrmCustomerResponsePayload(
+            crmStatus = RecordStepStatus.WARNING,
+            crmMessage = null,
+            crmAccountId = "",
+            crmRoleId = "RoleXYZ"
+        )
+
+        assertFalse(payload.isToUpdate())
+    }
+}

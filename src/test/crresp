@@ -1,0 +1,59 @@
+import com.fasterxml.jackson.annotation.JsonProperty
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+class CrmCustomerResponseTest {
+
+    private lateinit var crmCustomerResponse: CrmCustomerResponse
+    private lateinit var role: Role
+
+    @BeforeEach
+    fun setup() {
+        // GIVEN: un rôle complet
+        role = Role(
+            status = "OK",
+            message = "Role created successfully",
+            roleId = "ROLE-123"
+        )
+
+        // GIVEN: un CrmCustomerResponse complet
+        crmCustomerResponse = CrmCustomerResponse(
+            accountId = "ACC-123",
+            message = "Customer created successfully",
+            status = "OK",
+            roles = listOf(role)
+        )
+    }
+
+    @Test
+    @DisplayName("it should create CrmCustomerResponse with all fields")
+    fun `create CrmCustomerResponse`() {
+        assertNotNull(crmCustomerResponse)
+        assertEquals("ACC-123", crmCustomerResponse.accountId)
+        assertEquals("Customer created successfully", crmCustomerResponse.message)
+        assertEquals("OK", crmCustomerResponse.status)
+        assertNotNull(crmCustomerResponse.roles)
+        assertEquals(1, crmCustomerResponse.roles?.size)
+        assertEquals("ROLE-123", crmCustomerResponse.roles?.first()?.roleId)
+    }
+
+    @Test
+    @DisplayName("it should convert to CrmCustomerResponsePayload correctly")
+    fun `convert to payload`() {
+        val payload = crmCustomerResponse.toPayload()
+        assertEquals(RecordStepStatus.OK, payload.crmStatus)
+        assertEquals("Customer created successfully", payload.crmMessage)
+        assertEquals("ACC-123", payload.crmAccountId)
+        assertEquals("ROLE-123", payload.crmRoleId)
+    }
+
+    @Test
+    @DisplayName("it should correctly detect Caixa CRM update")
+    fun `is Caixa CRM update`() {
+        assertTrue(crmCustomerResponse.isCaixaCrmUpdate())
+    }
+}

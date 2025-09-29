@@ -1,0 +1,50 @@
+package com.arval.blm.infrastructure.driven.dynatrace
+
+import io.micrometer.core.instrument.Counter
+import io.micrometer.core.instrument.DistributionSummary
+import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.Tag
+import io.micrometer.core.instrument.Timer
+import org.springframework.stereotype.Component
+import java.time.Duration
+import java.util.concurrent.TimeUnit
+
+@DrivenAdapter
+@Component
+open class MicroMeterAdapter(
+    private val meterRegistry: MeterRegistry
+) : ContactsMetricRegistrySpi {
+
+    // Fonction publique pour créer un Counter mockable
+    open fun createCounter(name: String, tags: Map<String, String>): Counter {
+        return Counter.builder("$name.counter")
+            .tags(tags.entries.map { Tag.of(it.key, it.value) })
+            .register(meterRegistry)
+    }
+
+    // Fonction publique pour créer un Timer mockable
+    open fun createTimer(name: String, tags: Map<String, String>): Timer {
+        return Timer.builder("$name.timer")
+            .tags(tags.entries.map { Tag.of(it.key, it.value) })
+            .register(meterRegistry)
+    }
+
+    // Fonction publique pour créer un DistributionSummary mockable
+    open fun createSummary(name: String, tags: Map<String, String>): DistributionSummary {
+        return DistributionSummary.builder("$name.summary")
+            .tags(tags.entries.map { Tag.of(it.key, it.value) })
+            .register(meterRegistry)
+    }
+
+    override fun incrementCounter(name: String, tags: Map<String, String>) {
+        createCounter(name, tags).increment()
+    }
+
+    override fun recordTime(name: String, duration: Duration, tags: Map<String, String>) {
+        createTimer(name, tags).record(duration.toSeconds(), TimeUnit.SECONDS)
+    }
+
+    override fun recordSummary(name: String, value: Double, tags: Map<String, String>) {
+        createSummary(name, tags).record(value)
+    }
+}

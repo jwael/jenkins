@@ -1,0 +1,50 @@
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.DisplayName
+import java.time.LocalDate
+import kotlin.test.assertEquals
+
+class ClsCustomerDataRequestPayLoadTest {
+
+    @Test
+    @DisplayName("it should create ClsCustomerDataRequestPayLoad with all fields")
+    fun `should create payload`() {
+        // GIVEN
+        val batchRef = ReferenceId("0123456789") // length 10
+        val rowRef = ReferenceId("ABCDEFGHIJ")   // length 10
+        val reconciliationId = ReconciliationId(batchReference = batchRef, rowReference = rowRef)
+
+        val payload = ClsCustomerDataRequestPayLoad(
+            countryCode = CountryCode("FR"),
+            reconciliationId = reconciliationId,
+            persAcctSalesforceID = "SF12345678",
+            persAcctType = "Customer",
+            persAcctCLSAccountID = "CLS9876543"
+        )
+
+        // THEN
+        assertEquals("FR", payload.countryCode.countryCode)
+        assertEquals(reconciliationId, payload.reconciliationId)
+        assertEquals("SF12345678", payload.persAcctSalesforceID)
+        assertEquals("Customer", payload.persAcctType)
+        assertEquals("CLS9876543", payload.persAcctCLSAccountID)
+    }
+
+    @Test
+    @DisplayName("it should print reconciliationId correctly")
+    fun `should print reconciliationId`() {
+        val batchRef = ReferenceId("0123456789")
+        val rowRef = ReferenceId("ABCDEFGHIJ")
+        val reconciliationId = ReconciliationId(batchReference = batchRef, rowReference = rowRef)
+
+        val payload = ClsCustomerDataRequestPayLoad(
+            countryCode = CountryCode("FR"),
+            reconciliationId = reconciliationId,
+            persAcctSalesforceID = "SF12345678",
+            persAcctType = "Customer",
+            persAcctCLSAccountID = "CLS9876543"
+        )
+
+        val printed = "${payload.reconciliationId.batchReference.value}_${payload.reconciliationId.rowReference.value}"
+        assertEquals("0123456789_ABCDEFGHIJ", printed)
+    }
+}

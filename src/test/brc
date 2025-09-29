@@ -1,0 +1,41 @@
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.DisplayName
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+
+class ListBatchCriteriaTest {
+
+    @Test
+    @DisplayName("ListBatchCriteria should initialize with nulls by default")
+    fun `default constructor sets nulls`() {
+        val criteria = ListBatchCriteria()
+
+        assertNull(criteria.triggeredBy)
+        assertNull(criteria.types)
+    }
+
+    @Test
+    @DisplayName("ListBatchCriteria should store provided values correctly")
+    fun `constructor sets provided values`() {
+        val types = listOf(LoaderBatchType.CONTACTS, LoaderBatchType.B2C_CAIXA)
+        val criteria = ListBatchCriteria(
+            triggeredBy = "user01",
+            types = types
+        )
+
+        assertEquals("user01", criteria.triggeredBy)
+        assertEquals(types, criteria.types)
+    }
+
+    @Test
+    @DisplayName("ListBatchCriteria should handle empty types list")
+    fun `empty types list is allowed`() {
+        val criteria = ListBatchCriteria(
+            triggeredBy = "user02",
+            types = emptyList()
+        )
+
+        assertEquals("user02", criteria.triggeredBy)
+        assertEquals(emptyList<LoaderBatchType>(), criteria.types)
+    }
+}

@@ -1,0 +1,70 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.DisplayName
+import kotlin.test.assertEquals
+
+class CrmRoleDataTest {
+
+    private lateinit var crCustomerData: CrmClsCustomerData
+    private lateinit var crmContactData: CrmClsContactData
+    private lateinit var reconciliationId: ReconciliationId
+    private val batchId = "ABCDEFGHIJ" // 10 caractères obligatoires
+
+    @BeforeEach
+    fun setup() {
+        clearAllMocks()
+        
+        reconciliationId = ReconciliationId.parse("$batchId_ROW00001")
+
+        crCustomerData = mockk(relaxed = true) {
+            every { id } returns "CUST001"
+            every { batchId } returns batchId
+            every { rowNumber } returns 1
+        }
+
+        crmContactData = mockk(relaxed = true) {
+            every { id } returns "CONTACT001"
+            every { batchId } returns batchId
+            every { rowNumber } returns 1
+        }
+    }
+
+    @Test
+    @DisplayName("it should create CrmRoleData correctly with all fields")
+    fun `create CrmRoleData with customer and contact data`() {
+        // WHEN
+        val crmRoleData = CrmRoleData(
+            reconciliationId = reconciliationId,
+            batchId = batchId,
+            rowNumber = 1,
+            crCustomerData = crCustomerData,
+            crmContactData = crmContactData
+        )
+
+        // THEN
+        assertEquals(reconciliationId, crmRoleData.reconciliationId)
+        assertEquals(batchId, crmRoleData.batchId)
+        assertEquals(1, crmRoleData.rowNumber)
+        assertEquals(crCustomerData, crmRoleData.crCustomerData)
+        assertEquals(crmContactData, crmRoleData.crmContactData)
+    }
+
+    @Test
+    @DisplayName("it should allow null for customer and contact data")
+    fun `create CrmRoleData with null customer and contact`() {
+        // WHEN
+        val crmRoleData = CrmRoleData(
+            reconciliationId = reconciliationId,
+            batchId = batchId,
+            rowNumber = 2,
+            crCustomerData = null,
+            crmContactData = null
+        )
+
+        // THEN
+        assertEquals(null, crmRoleData.crCustomerData)
+        assertEquals(null, crmRoleData.crmContactData)
+        assertEquals(2, crmRoleData.rowNumber)
+    }
+}

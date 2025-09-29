@@ -1,0 +1,57 @@
+package com.arval.blm.core.domain.model.batch
+
+import com.arval.blm.core.domain.ReferenceId
+import com.arval.blm.core.domain.model.RecordStepName
+import com.arval.blm.core.domain.model.RecordStepStatus
+import com.arval.blm.core.domain.model.StepDetails
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+import java.time.Instant
+
+class BatchImportOverviewTest {
+
+    @Test
+    @DisplayName("it should correctly calculate progress percentage and counts from BatchEventSummary")
+    fun shouldMapBatchEventSummaryToImportOverview() {
+        // GIVEN
+        val batchReference = ReferenceId("1234567890") // length = 10 ok
+        val stepsDetails = listOf(
+            StepDetails(stepName = RecordStepName.SF_CREATE, stepStatus = RecordStepStatus.OK, totalCount = 5),
+            StepDetails(stepName = RecordStepName.SF_UPDATE, stepStatus = RecordStepStatus.WARNING, totalCount = 3),
+            StepDetails(stepName = RecordStepName.ODS, stepStatus = RecordStepStatus.KO, totalCount = 2),
+            StepDetails(stepName = RecordStepName.BLM, stepStatus = RecordStepStatus.OK, totalCount = 1)
+        )
+
+        val summary = BatchEventSummary(
+            batchReference = batchReference,
+            totalContacts = 20,
+            batchStatus = LoaderBatchStatus.RUNNING,
+            triggeredBy = "user123",
+            type = LoaderBatchType.CONTACTS,
+            countryCode = com.arval.blm.core.domain.model.CountryCode("FR"),
+            date = Instant.now(),
+            stepsDetails = stepsDetails
+        )
+
+        // WHEN
+        val overview = summary.toImportOverview()
+
+        // THEN
+        assertEquals(batchReference, overview.batchReference)
+        assertEquals(20, overview.totalContacts)
+        assertEquals(LoaderBatchStatus.RUNNING, overview.batchStatus)
+
+        // successCount = 5 (SF_CREATE OK) + 1 (BLM OK) = 6
+        assertEquals(6, overview.successCount)
+
+        // warningsCount = 3 (SF_UPDATE WARNING)
+        assertEquals(3, overview.warningsCount)
+
+        // errorsCount = 2 (ODS KO)
+        assertEquals(2, overview.errorsCount)
+
+        // progress = ((6 + 2) / 20) * 100 = 40%
+        assertEquals(40, overview.progressPercentage)
+    }
+}

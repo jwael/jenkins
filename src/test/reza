@@ -1,0 +1,52 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.DisplayName
+import kotlin.test.assertEquals
+
+class GetFailedEventMessageUseCaseTest {
+
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk()
+
+    private lateinit var useCase: GetFailedEventMessageUseCase
+
+    private val reconciliationId = ReconciliationId(
+        batchReference = ReferenceId("0123456789"), // longueur = 10
+        rowReference = ReferenceId("ABCDEFGHIJ")   // longueur = 10
+    )
+
+    @BeforeEach
+    fun setup() {
+        clearMocks(recordStepEventRepositorySpi)
+        useCase = GetFailedEventMessageUseCase(recordStepEventRepositorySpi)
+    }
+
+    @Test
+    @DisplayName("it should return the message for a given reconciliationId")
+    fun `it should return message`() {
+        // GIVEN
+        val expectedMessage = "This is a failed event message"
+        every { recordStepEventRepositorySpi.getMessageByReconciliationId(reconciliationId) } returns expectedMessage
+
+        // WHEN
+        val result = useCase.execute(reconciliationId)
+
+        // THEN
+        assertEquals(expectedMessage, result)
+        verify(exactly = 1) { recordStepEventRepositorySpi.getMessageByReconciliationId(reconciliationId) }
+    }
+
+    @Test
+    @DisplayName("it should return empty string if repository returns null")
+    fun `it should return empty string when no message`() {
+        // GIVEN
+        every { recordStepEventRepositorySpi.getMessageByReconciliationId(reconciliationId) } returns ""
+
+        // WHEN
+        val result = useCase.execute(reconciliationId)
+
+        // THEN
+        assertEquals("", result)
+        verify(exactly = 1) { recordStepEventRepositorySpi.getMessageByReconciliationId(reconciliationId) }
+    }
+}

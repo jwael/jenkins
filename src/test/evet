@@ -1,0 +1,102 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+import java.time.Instant
+import kotlin.test.assertEquals
+
+class HandleCustomerRequestUseCaseTest {
+
+    private val crmClsCustomerDataRepositorySpi: CrmClsCustomerDataRepositorySpi = mockk()
+    private val clsProviderSpi: ClsProviderSpi = mockk()
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk()
+    private val clockProvider: ClockProvider = mockk()
+
+    private lateinit var useCase: HandleCustomerRequestUseCase
+
+    private val countryCode = CountryCode("FR")
+    private val reconciliationId = ReconciliationId(
+        batchReference = ReferenceId("BATCH00001"),
+        rowReference = ReferenceId("ROW000001")
+    )
+    private val clsId = "CLS12345"
+    private val contactRoleSalesForceId = "ROLE001"
+
+    private val contactDataRequestPayload = ClsContactDataRequestPayLoad(
+        countryCode = countryCode,
+        reconciliationId = reconciliationId,
+        clsId = clsId,
+        contactRoleSalesForceId = contactRoleSalesForceId
+    )
+
+    private val contactEntity = CrmClsContactData(
+        id = "CUST001",
+        batchId = "BATCH001",
+        reconciliationId = reconciliationId,
+        rowNumber = 1,
+        rowReference = ReferenceId("ROW000001"),
+        crmData = CrmData(),
+        clsData = emptyMap(),
+        crmInsertedId = null
+    )
+
+    @BeforeEach
+    fun setup() {
+        clearMocks(crmClsCustomerDataRepositorySpi, clsProviderSpi, recordStepEventRepositorySpi, clockProvider)
+        useCase = HandleCustomerRequestUseCase(
+            crmClsCustomerDataRepositorySpi = crmClsCustomerDataRepositorySpi,
+            clsProviderSpi = clsProviderSpi,
+            recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+            clockProvider = clockProvider
+        )
+    }
+
+    @Test
+    @DisplayName("it should enrich CLS data, send to CLS, and save step event")
+    fun `should enrich contact and call CLS provider`() {
+        // GIVEN
+        every { crmClsCustomerDataRepositorySpi.findByReconciliationId(reconciliationId) } returns contactEntity
+        every { clsProviderSpi.sendContactToCls(any(), countryCode) } just Runs
+        every { recordStepEventRepositorySpi.save(any()) } just Runs
+        every { clockProvider.now() } returns Instant.now()
+
+        // WHEN
+        useCase.invoke(contactDataRequestPayload)
+
+        // THEN
+        verify(exactly = 1) { crmClsCustomerDataRepositorySpi.findByReconciliationId(reconciliationId) }
+
+        verify(exactly = 1) { clsProviderSpi.sendContactToCls(
+            match {
+                it.clsData["CLS_ID"] == clsId &&
+                it.reconciliationId == reconciliationId
+            }, countryCode
+        ) }
+
+        verify(exactly = 1) { recordStepEventRepositorySpi.save(
+            match {
+                it.batchId == contactEntity.batchId &&
+                it.rowNumber == contactEntity.rowNumber &&
+                it.reconciliationId == reconciliationId &&
+                it.stepName == RecordStepName.CLS_SENDING &&
+                it.stepStatus == RecordStepStatus.OK
+            }
+        ) }
+    }
+
+    @Test
+    @DisplayName("it should log a warning if contact not found")
+    fun `should warn when contact is not found`() {
+        // GIVEN
+        every { crmClsCustomerDataRepositorySpi.findByReconciliationId(reconciliationId) } returns null
+        every { clockProvider.now() } returns Instant.now()
+
+        // WHEN
+        useCase.invoke(contactDataRequestPayload)
+
+        // THEN
+        verify(exactly = 1) { crmClsCustomerDataRepositorySpi.findByReconciliationId(reconciliationId) }
+        verify(exactly = 0) { clsProviderSpi.sendContactToCls(any(), any()) }
+        verify(exactly = 0) { recordStepEventRepositorySpi.save(any()) }
+    }
+}

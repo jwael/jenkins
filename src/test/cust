@@ -1,0 +1,72 @@
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.DisplayName
+import kotlin.test.assertEquals
+
+class ClsCustomerDataFeedbackPayLoadTest {
+
+    @Test
+    @DisplayName("fullMessage should combine scope and errorMessage correctly")
+    fun `fullMessage returns scope - errorMessage`() {
+        // GIVEN
+        val payload = ClsCustomerDataFeedbackPayLoad(
+            countryCode = CountryCode("FR"),
+            reconciliationId = ReconciliationId(
+                batchReference = ReferenceId("BATCH00001"), // 10 caractères
+                rowReference = ReferenceId("ROW000001")    // 10 caractères
+            ),
+            scope = "TEST_SCOPE",
+            status = RecordStepStatus.KO,
+            errorMessage = "Erreur détectée"
+        )
+
+        // WHEN
+        val result = payload.fullMessage()
+
+        // THEN
+        assertEquals("TEST_SCOPE - Erreur détectée", result)
+    }
+
+    @Test
+    @DisplayName("fullMessage should handle null errorMessage")
+    fun `fullMessage returns scope - null if errorMessage is null`() {
+        // GIVEN
+        val payload = ClsCustomerDataFeedbackPayLoad(
+            countryCode = CountryCode("FR"),
+            reconciliationId = ReconciliationId(
+                batchReference = ReferenceId("BATCH00001"),
+                rowReference = ReferenceId("ROW000001")
+            ),
+            scope = "TEST_SCOPE",
+            status = RecordStepStatus.OK,
+            errorMessage = null
+        )
+
+        // WHEN
+        val result = payload.fullMessage()
+
+        // THEN
+        assertEquals("TEST_SCOPE - null", result)
+    }
+
+    @Test
+    @DisplayName("fullMessage should handle null scope")
+    fun `fullMessage returns null - errorMessage if scope is null`() {
+        // GIVEN
+        val payload = ClsCustomerDataFeedbackPayLoad(
+            countryCode = CountryCode("FR"),
+            reconciliationId = ReconciliationId(
+                batchReference = ReferenceId("BATCH00001"),
+                rowReference = ReferenceId("ROW000001")
+            ),
+            scope = null,
+            status = RecordStepStatus.KO,
+            errorMessage = "Erreur détectée"
+        )
+
+        // WHEN
+        val result = payload.fullMessage()
+
+        // THEN
+        assertEquals("null - Erreur détectée", result)
+    }
+}

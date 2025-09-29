@@ -1,0 +1,118 @@
+import io.mockk.every
+import io.mockk.mockk
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+import java.time.Instant
+
+class CrmRoleDataTest {
+
+    private lateinit var reconciliationId: ReconciliationId
+    private lateinit var crmCustomerData: CrmCustomerData
+    private lateinit var crmContactData: CrmContactData
+    private lateinit var crmRoleData: CrmRoleData
+
+    @BeforeEach
+    fun setup() {
+        // On crée un ReconciliationId valide (batch et row reference de 10 caractères chacun)
+        reconciliationId = ReconciliationId.parse("0123456789_ABCDEFGHIJ")
+
+        // Mock ou valeurs de test pour CrmCustomerData
+        crmCustomerData = CrmCustomerData(
+            id = "CUST001",
+            batchId = "0123456789",
+            reconciliationId = reconciliationId,
+            rowNumber = 1,
+            rowReference = ReferenceId("ABCDEFGHIJ"),
+            crmData = CrmData(
+                contactRole = "ROLE_DRIVER",
+                kYCType = "TYPE_A",
+                authorizedSignature = true,
+                salesforceAccountId = "SF_ACC_001",
+                mainContact = true,
+                startDate = Instant.now(),
+                endDate = Instant.now().plusSeconds(3600)
+            ),
+            clsData = emptyMap(),
+            crmInsertedId = "INS_001"
+        )
+
+        // Mock ou valeurs de test pour CrmContactData
+        crmContactData = CrmContactData(
+            id = "CONT001",
+            batchId = "0123456789",
+            reconciliationId = reconciliationId,
+            rowNumber = 2,
+            rowReference = ReferenceId("JKLMNOPQR"),
+            crmData = CrmData(
+                contactRole = "ROLE_PASSENGER",
+                roleClsCompanyCode = "COMP001",
+                companyCode = "COMP_EXT_001",
+                sfRelatedAccount = "SF_REL_001",
+                mainContact = false,
+                startDate = Instant.now(),
+                endDate = Instant.now().plusSeconds(7200)
+            ),
+            clsData = emptyMap(),
+            crmInsertedId = "INS_002"
+        )
+
+        crmRoleData = CrmRoleData(
+            reconciliationId = reconciliationId,
+            batchid = "0123456789",
+            rowNumber = 1,
+            crCustomerData = crmCustomerData,
+            crmContactData = crmContactData
+        )
+    }
+
+    @Test
+    @DisplayName("Should map CrmRoleData to CrmCustomerRoleRequest")
+    fun `toCrmCustomerRoleRequest mapping works`() {
+        val request = crmRoleData.toCrmCustomerRoleRequest()
+
+        assertEquals(reconciliationId.print(), request.correlationId)
+        val role = request.data.roles?.first()
+        assertEquals("ROLE_DRIVER", role?.roleCode)
+        assertEquals("TYPE_A", role?.kycType)
+        assertEquals(true, role?.authorizedSignature)
+        assertEquals("SF_ACC_001", role?.relatedAccountId)
+        assertEquals(true, role?.isMainContact)
+    }
+
+    @Test
+    @DisplayName("Should map CrmRoleData to CrmCustomerRoleUpdateRequest")
+    fun `toCrmCustomerRoleUpdateRequest mapping works`() {
+        val request = crmRoleData.toCrmCustomerRoleUpdateRequest()
+        assertEquals(reconciliationId.print(), request.correlationId)
+        assertEquals("ROLE_DRIVER", request.data.roleCode)
+        assertEquals("TYPE_A", request.data.kycType)
+        assertEquals(true, request.data.authorizedSignature)
+    }
+
+    @Test
+    @DisplayName("Should map CrmRoleData to CrmContactRoleRequest")
+    fun `toCrmContactRoleRequest mapping works`() {
+        val request = crmRoleData.toCrmContactRoleRequest()
+        assertEquals(reconciliationId.print(), request.correlationId)
+        val role = request.data.roles?.first()
+        assertEquals("ROLE_PASSENGER", role?.roleCode)
+        assertEquals("COMP001", role?.accountExternalCode)
+        assertEquals("COMP_EXT_001", role?.relatedAccountExternalId)
+        assertEquals("SF_REL_001", role?.relatedAccountId)
+        assertEquals(false, role?.isMainContact)
+    }
+
+    @Test
+    @DisplayName("Should map CrmRoleData to CrmContactRoleUpdateRequest")
+    fun `toCrmContactRoleUpdateRequest mapping works`() {
+        val request = crmRoleData.toCrmContactRoleUpdateRequest()
+        assertEquals(reconciliationId.print(), request.correlationId)
+        assertEquals("ROLE_PASSENGER", request.data.roleCode)
+        assertEquals("COMP001", request.data.accountExternalCode)
+        assertEquals("COMP_EXT_001", request.data.relatedAccountExternalId)
+        assertEquals("SF_REL_001", request.data.relatedAccountId)
+        assertEquals(false, request.data.isMainContact)
+    }
+}

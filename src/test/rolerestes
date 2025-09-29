@@ -1,0 +1,90 @@
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+
+class RolesResponseTest {
+
+    private lateinit var roleOk: RoleResponse
+    private lateinit var roleKo: RoleResponse
+    private lateinit var roleWarning: RoleResponse
+
+    @BeforeEach
+    fun setup() {
+        roleOk = RoleResponse(
+            status = "OK",
+            message = "Operation successful",
+            roleld = "ROLE_001"
+        )
+
+        roleKo = RoleResponse(
+            status = "KO",
+            message = "Operation failed",
+            roleld = "ROLE_002"
+        )
+
+        roleWarning = RoleResponse(
+            status = "UNKNOWN",
+            message = "Unknown status",
+            roleld = "ROLE_003"
+        )
+    }
+
+    @Test
+    @DisplayName("RoleResponse.toDomain should map status correctly")
+    fun `roleResponse toDomain maps statuses`() {
+        val payloadOk = roleOk.toDomain()
+        assertEquals(RecordStepStatus.OK, payloadOk.crmStatus)
+        assertEquals("Operation successful", payloadOk.crmMessage)
+        assertEquals("ROLE_001", payloadOk.crmRoleId)
+
+        val payloadKo = roleKo.toDomain()
+        assertEquals(RecordStepStatus.KO, payloadKo.crmStatus)
+        assertEquals("Operation failed", payloadKo.crmMessage)
+        assertEquals("ROLE_002", payloadKo.crmRoleId)
+
+        val payloadWarning = roleWarning.toDomain()
+        assertEquals(RecordStepStatus.WARNING, payloadWarning.crmStatus)
+        assertEquals("Unknown status", payloadWarning.crmMessage)
+        assertEquals("ROLE_003", payloadWarning.crmRoleId)
+    }
+
+    @Test
+    @DisplayName("RolesResponse.toDomain should map first role correctly")
+    fun `rolesResponse toDomain maps first role`() {
+        val rolesResponse = RolesResponse(
+            roles = listOf(roleOk, roleKo)
+        )
+
+        val domainPayload = rolesResponse.toDomain()
+        assertEquals(RecordStepStatus.OK, domainPayload.crmStatus)
+        assertEquals("Operation successful", domainPayload.crmMessage)
+        assertEquals("ROLE_001", domainPayload.crmRoleId)
+    }
+
+    @Test
+    @DisplayName("RolesResponse.toDomain handles empty roles list")
+    fun `rolesResponse toDomain handles empty list`() {
+        val rolesResponse = RolesResponse(
+            roles = emptyList()
+        )
+
+        val domainPayload = rolesResponse.toDomain()
+        assertEquals(RecordStepStatus.WARNING, domainPayload.crmStatus)
+        assertEquals(null, domainPayload.crmMessage)
+        assertEquals(null, domainPayload.crmRoleId)
+    }
+
+    @Test
+    @DisplayName("RolesResponse.toDomain handles null roles list")
+    fun `rolesResponse toDomain handles null list`() {
+        val rolesResponse = RolesResponse(
+            roles = null
+        )
+
+        val domainPayload = rolesResponse.toDomain()
+        assertEquals(RecordStepStatus.WARNING, domainPayload.crmStatus)
+        assertEquals(null, domainPayload.crmMessage)
+        assertEquals(null, domainPayload.crmRoleId)
+    }
+}

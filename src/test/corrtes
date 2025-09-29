@@ -1,0 +1,71 @@
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
+import io.micrometer.core.instrument.Counter
+import io.micrometer.core.instrument.DistributionSummary
+import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.Tag
+import io.micrometer.core.instrument.Timer
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import java.time.Duration
+import java.util.concurrent.TimeUnit
+
+class MicroMeterAdapterTest {
+
+    private lateinit var meterRegistry: MeterRegistry
+    private lateinit var microMeterAdapter: MicroMeterAdapter
+
+    private lateinit var mockCounter: Counter
+    private lateinit var mockTimer: Timer
+    private lateinit var mockSummary: DistributionSummary
+
+    @BeforeEach
+    fun setup() {
+        meterRegistry = mockk()
+        microMeterAdapter = MicroMeterAdapter(meterRegistry)
+
+        mockCounter = mockk(relaxed = true)
+        mockTimer = mockk(relaxed = true)
+        mockSummary = mockk(relaxed = true)
+
+        every { meterRegistry.counter(any(), *anyVararg<Tag>()) } returns mockCounter
+        every { meterRegistry.timer(any(), *anyVararg<Tag>()) } returns mockTimer
+        every { meterRegistry.summary(any(), *anyVararg<Tag>()) } returns mockSummary
+    }
+
+    @Test
+    fun `should increment counter with correct name and tags`() {
+        val name = "testCounter"
+        val tags = mapOf("env" to "test")
+
+        microMeterAdapter.incrementCounter(name, tags)
+
+        verify { meterRegistry.counter("$name.counter", *anyVararg<Tag>()) }
+        verify { mockCounter.increment() }
+    }
+
+    @Test
+    fun `should record timer with correct name, duration and tags`() {
+        val name = "testTimer"
+        val duration = Duration.ofSeconds(5)
+        val tags = mapOf("env" to "test")
+
+        microMeterAdapter.recordTime(name, duration, tags)
+
+        verify { meterRegistry.timer("$name.timer", *anyVararg<Tag>()) }
+        verify { mockTimer.record(duration.toSeconds(), TimeUnit.SECONDS) }
+    }
+
+    @Test
+    fun `should record summary with correct name, value and tags`() {
+        val name = "testSummary"
+        val value = 42.0
+        val tags = mapOf("env" to "test")
+
+        microMeterAdapter.recordSummary(name, value, tags)
+
+        verify { meterRegistry.summary("$name.summary", *anyVararg<Tag>()) }
+        verify { mockSummary.record(value) }
+    }
+}

@@ -1,0 +1,107 @@
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.DisplayName
+import java.time.Instant
+import java.time.Duration
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+
+class LoaderBatchTest {
+
+    private val validReference = ReferenceId("0123456789") // longueur = 10
+    private val validCountry = CountryCode("FR") // ISO valide
+
+    @Test
+    @DisplayName("LoaderBatch should calculate duration correctly when endDate is set")
+    fun `duration returns correct value when endDate is set`() {
+        val start = Instant.parse("2025-01-01T10:00:00Z")
+        val end = Instant.parse("2025-01-01T12:30:00Z")
+
+        val batch = LoaderBatch(
+            id = "1",
+            reference = validReference,
+            fileName = "contacts.csv",
+            triggeredBy = "user01",
+            countryCode = validCountry,
+            status = LoaderBatchStatus.RUNNING,
+            type = LoaderBatchType.CONTACTS,
+            startDate = start,
+            endDate = end,
+            totalContacts = 100
+        )
+
+        val duration = batch.duration()
+        assertNotNull(duration)
+        assertEquals(Duration.ofHours(2).plusMinutes(30), duration)
+    }
+
+    @Test
+    @DisplayName("LoaderBatch should return null duration if endDate is not set")
+    fun `duration returns null when endDate is null`() {
+        val start = Instant.parse("2025-01-01T10:00:00Z")
+
+        val batch = LoaderBatch(
+            id = "2",
+            reference = validReference,
+            fileName = "contacts.csv",
+            triggeredBy = "user02",
+            countryCode = validCountry,
+            status = LoaderBatchStatus.RUNNING,
+            type = LoaderBatchType.CONTACTS,
+            startDate = start,
+            endDate = null,
+            totalContacts = 50
+        )
+
+        val duration = batch.duration()
+        assertNull(duration)
+    }
+
+    @Test
+    @DisplayName("LoaderBatch should have correct default status")
+    fun `default status is RUNNING`() {
+        val start = Instant.now()
+        val batch = LoaderBatch(
+            id = null,
+            reference = validReference,
+            fileName = "file.csv",
+            triggeredBy = "user03",
+            countryCode = validCountry,
+            type = LoaderBatchType.B2C_CAIXA,
+            startDate = start,
+            totalContacts = 10
+        )
+
+        assertEquals(LoaderBatchStatus.RUNNING, batch.status)
+    }
+
+    @Test
+    @DisplayName("LoaderBatch should store all fields correctly")
+    fun `all fields are correctly set`() {
+        val start = Instant.now()
+        val end = start.plusSeconds(3600)
+        val batch = LoaderBatch(
+            id = "3",
+            reference = validReference,
+            fileName = "file.csv",
+            triggeredBy = "user04",
+            countryCode = validCountry,
+            status = LoaderBatchStatus.SUCCESS,
+            type = LoaderBatchType.B2C_E_PARTNER,
+            startDate = start,
+            endDate = end,
+            totalContacts = 200
+        )
+
+        assertEquals("3", batch.id)
+        assertEquals(validReference, batch.reference)
+        assertEquals("file.csv", batch.fileName)
+        assertEquals("user04", batch.triggeredBy)
+        assertEquals(validCountry, batch.countryCode)
+        assertEquals(LoaderBatchStatus.SUCCESS, batch.status)
+        assertEquals(LoaderBatchType.B2C_E_PARTNER, batch.type)
+        assertEquals(start, batch.startDate)
+        assertEquals(end, batch.endDate)
+        assertEquals(200, batch.totalContacts)
+    }
+}

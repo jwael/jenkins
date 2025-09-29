@@ -1,0 +1,98 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.DisplayName
+import java.time.Instant
+
+class HandleClsContactRequestUseCaseTest {
+
+    private val crmClsContactDataRepositorySpi: CrmClsContactDataRepositorySpi = mockk()
+    private val clsProviderSpi: ClsProviderSpi = mockk()
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+    private val clockProvider: ClockProvider = mockk()
+
+    private lateinit var useCase: HandleClsContactRequestUseCase
+
+    @BeforeEach
+    fun setup() {
+        clearMocks(crmClsContactDataRepositorySpi, clsProviderSpi, recordStepEventRepositorySpi, clockProvider)
+        useCase = HandleClsContactRequestUseCase(
+            crmClsContactDataRepositorySpi = crmClsContactDataRepositorySpi,
+            clsProviderSpi = clsProviderSpi,
+            recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+            clockProvider = clockProvider
+        )
+    }
+
+    @Test
+    @DisplayName("it should send CLS contact and save record step event")
+    fun `it should send contact and save record step event`() {
+        // GIVEN
+        val batchId = "AAAAAAAAAA"
+        val rowRef = ReferenceId("0000000001")
+        val batchRef = ReferenceId("0123456789")
+        val reconciliationId = ReconciliationId(batchReference = batchRef, rowReference = rowRef)
+
+        val contact = CrmClsContactData(
+            id = "1",
+            batchId = batchId,
+            rowNumber = 1,
+            rowReference = rowRef,
+            crmData = CrmData(),
+            clsData = emptyMap(),
+            crminsertedId = null,
+            reconciliationId = reconciliationId
+        )
+
+        val payload = ClsContactDataRequestPayLoad(
+            countryCode = CountryCode("FR"),
+            reconciliationId = reconciliationId,
+            contactRoleSalesForceId = "Driver",
+            clsId = "CLS1234567"
+        )
+
+        every { crmClsContactDataRepositorySpi.findByReconciliationId(reconciliationId) } returns contact
+        every { clsProviderSpi.sendContactToCls(contact, payload.countryCode) } just Runs
+        every { clockProvider.now() } returns Instant.now()
+
+        // WHEN
+        useCase.invoke(payload)
+
+        // THEN
+        verify(exactly = 1) { crmClsContactDataRepositorySpi.findByReconciliationId(reconciliationId) }
+        verify(exactly = 1) { clsProviderSpi.sendContactToCls(match { it == contact.copy(clsData = contact.clsData + mapOf("CLS_ID" to payload.clsId)) }, payload.countryCode) }
+        verify(exactly = 1) { recordStepEventRepositorySpi.save(match {
+            it.batchId == batchId &&
+            it.rowNumber == contact.rowNumber &&
+            it.reconciliationId == reconciliationId &&
+            it.stepName == RecordStepName.CLS_SENDING &&
+            it.stepStatus == RecordStepStatus.OK
+        }) }
+    }
+
+    @Test
+    @DisplayName("it should warn when contact is not found")
+    fun `it should log warning when contact not found`() {
+        // GIVEN
+        val batchRef = ReferenceId("0123456789")
+        val rowRef = ReferenceId("0000000001")
+        val reconciliationId = ReconciliationId(batchRef, rowRef)
+        val payload = ClsContactDataRequestPayLoad(
+            countryCode = CountryCode("FR"),
+            reconciliationId = reconciliationId,
+            contactRoleSalesForceId = "Driver",
+            clsId = "CLS1234567"
+        )
+
+        every { crmClsContactDataRepositorySpi.findByReconciliationId(reconciliationId) } returns null
+        every { clockProvider.now() } returns Instant.now()
+
+        // WHEN
+        useCase.invoke(payload)
+
+        // THEN
+        verify(exactly = 1) { crmClsContactDataRepositorySpi.findByReconciliationId(reconciliationId) }
+        verify(exactly = 0) { clsProviderSpi.sendContactToCls(any(), any()) }
+        verify(exactly = 0) { recordStepEventRepositorySpi.save(any()) }
+    }
+}

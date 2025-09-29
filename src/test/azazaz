@@ -1,0 +1,61 @@
+import io.mockk.clearMocks
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+
+class CrmRoleResponsePayLoadTest {
+
+    private lateinit var payloadOk: CrmRoleResponsePayLoad
+    private lateinit var payloadKoWithMessage: CrmRoleResponsePayLoad
+    private lateinit var payloadKoWithoutMessage: CrmRoleResponsePayLoad
+
+    @BeforeEach
+    fun setup() {
+        clearMocks() // Pas de mocks ici mais on garde la logique teach lead
+
+        // GIVEN
+        payloadOk = CrmRoleResponsePayLoad(
+            crmStatus = RecordStepStatus.OK,
+            crmMessage = "Should be ignored",
+            crmRoleId = "ROLE123456"
+        )
+
+        payloadKoWithMessage = CrmRoleResponsePayLoad(
+            crmStatus = RecordStepStatus.KO,
+            crmMessage = "Error occurred",
+            crmRoleId = null
+        )
+
+        payloadKoWithoutMessage = CrmRoleResponsePayLoad(
+            crmStatus = RecordStepStatus.KO,
+            crmMessage = null,
+            crmRoleId = null
+        )
+    }
+
+    @Test
+    @DisplayName("it should return Salesforce Role ID when status is OK")
+    fun `returns role ID if status OK`() {
+        // WHEN
+        val message = payloadOk.getMessage()
+
+        // THEN
+        assertEquals("Salesforce Role ID: ROLE123456", message)
+    }
+
+    @Test
+    @DisplayName("it should return CRM message when status is not OK and message is present")
+    fun `returns CRM message if status not OK`() {
+        val message = payloadKoWithMessage.getMessage()
+        assertEquals("Error occurred", message)
+    }
+
+    @Test
+    @DisplayName("it should return null when status is not OK and message is null")
+    fun `returns null if status not OK and message null`() {
+        val message = payloadKoWithoutMessage.getMessage()
+        assertNull(message)
+    }
+}

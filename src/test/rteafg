@@ -1,0 +1,101 @@
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.DisplayName
+import kotlin.test.assertTrue
+import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
+
+class CrmClsCustomerDataTest {
+
+    private fun validCrmData() = CrmData(
+        salesforceAccountId = "SF12345678",
+        salesforceContactId = "SC12345678",
+        salesforceRoleId = "R12345",
+        mainCountry = "FR",
+        personalCountry = "FR",
+        country = "FR",
+        prefLanguageComm = "FR",
+        contactRole = "Driver",
+        startDate = null,
+        endDate = null,
+        authorizedSignature = null,
+        mainContact = null
+    )
+
+    @Test
+    @DisplayName("isCrUpdate should return true if salesforceAccountId is blank")
+    fun `isCrUpdate returns true when salesforceAccountId is blank`() {
+        val crm = CrmClsCustomerData(
+            id = null,
+            batchId = "0123456789", // longueur = 10
+            reconciliationId = ReconciliationId.parse("0123456789_ABCDEFGHIJ"),
+            rowNumber = 1,
+            rowReference = ReferenceId("ABCDEFGHIJ"),
+            crmData = validCrmData().copy(salesforceAccountId = null),
+            clsData = emptyMap(),
+            crmInsertedId = null
+        )
+
+        assertTrue(crm.isCrUpdate())
+    }
+
+    @Test
+    @DisplayName("isCreateRole should return true for valid role data")
+    fun `isCreateRole returns true for valid role fields`() {
+        val crm = CrmClsCustomerData(
+            id = null,
+            batchId = "0123456789",
+            reconciliationId = ReconciliationId.parse("0123456789_ABCDEFGHIJ"),
+            rowNumber = 1,
+            rowReference = ReferenceId("ABCDEFGHIJ"),
+            crmData = validCrmData().copy(
+                salesforceContactId = "SC123",
+                salesforceRoleId = "R123",
+                contactRole = "Driver"
+            ),
+            clsData = emptyMap(),
+            crmInsertedId = null
+        )
+
+        assertTrue(crm.isCreateRole())
+    }
+
+    @Test
+    @DisplayName("isUpdateRole should return false if role data is missing")
+    fun `isUpdateRole returns false when role fields are blank`() {
+        val crm = CrmClsCustomerData(
+            id = null,
+            batchId = "0123456789",
+            reconciliationId = ReconciliationId.parse("0123456789_ABCDEFGHIJ"),
+            rowNumber = 1,
+            rowReference = ReferenceId("ABCDEFGHIJ"),
+            crmData = validCrmData().copy(
+                salesforceContactId = null,
+                salesforceRoleId = null,
+                contactRole = null
+            ),
+            clsData = emptyMap(),
+            crmInsertedId = null
+        )
+
+        assertFalse(crm.isUpdateRole())
+    }
+
+    @Test
+    @DisplayName("validateRoles should throw exception if unexpected field is present")
+    fun `validateRoles throws exception for unexpected field`() {
+        val invalidCrmData = validCrmData().copy(authorizedSignature = "NotAllowedField")
+
+        assertFailsWith<IllegalArgumentException> {
+            CrmClsCustomerData(
+                id = null,
+                batchId = "0123456789",
+                reconciliationId = ReconciliationId.parse("0123456789_ABCDEFGHIJ"),
+                rowNumber = 1,
+                rowReference = ReferenceId("ABCDEFGHIJ"),
+                crmData = invalidCrmData,
+                clsData = emptyMap(),
+                crmInsertedId = null
+            )
+        }
+    }
+}

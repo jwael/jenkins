@@ -1,0 +1,59 @@
+import io.mockk.every
+import io.mockk.just
+import io.mockk.mockk
+import io.mockk.verify
+import io.micrometer.core.instrument.Counter
+import io.micrometer.core.instrument.DistributionSummary
+import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.Timer
+import org.junit.jupiter.api.Test
+import java.time.Duration
+
+class MicroMeterAdapterTest {
+
+    private val meterRegistry: MeterRegistry = mockk()
+    private val counter: Counter = mockk()
+    private val timer: Timer = mockk()
+    private val summary: DistributionSummary = mockk()
+
+    private val adapter = MicroMeterAdapter(meterRegistry)
+
+    @Test
+    fun `should increment counter`() {
+        // GIVEN
+        every { counter.increment() } just Runs
+        every { meterRegistry.counter(any<String>(), any<Iterable<io.micrometer.core.instrument.Tag>>()) } returns counter
+
+        // WHEN
+        adapter.incrementCounter("myCounter", mapOf("tag1" to "value1"))
+
+        // THEN
+        verify(exactly = 1) { counter.increment() }
+    }
+
+    @Test
+    fun `should record timer`() {
+        // GIVEN
+        every { timer.record(any<Long>(), any()) } just Runs
+        every { meterRegistry.timer(any<String>(), any<Iterable<io.micrometer.core.instrument.Tag>>()) } returns timer
+
+        // WHEN
+        adapter.recordTime("myTimer", Duration.ofSeconds(5), mapOf("tag1" to "value1"))
+
+        // THEN
+        verify(exactly = 1) { timer.record(5, java.util.concurrent.TimeUnit.SECONDS) }
+    }
+
+    @Test
+    fun `should record summary`() {
+        // GIVEN
+        every { summary.record(any()) } just Runs
+        every { meterRegistry.summary(any<String>(), any<Iterable<io.micrometer.core.instrument.Tag>>()) } returns summary
+
+        // WHEN
+        adapter.recordSummary("mySummary", 42.0, mapOf("tag1" to "value1"))
+
+        // THEN
+        verify(exactly = 1) { summary.record(42.0) }
+    }
+}

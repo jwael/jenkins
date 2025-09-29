@@ -1,0 +1,101 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
+import java.time.Instant
+import kotlin.test.assertEquals
+
+class HandleClsContactFeedbackUseCaseTest {
+
+    // SPI mocks
+    private val crmClsContactDataRepositorySpi: CrmClsContactDataRepositorySpi = mockk(relaxed = true)
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk(relaxed = true)
+    private val clockProvider: ClockProvider = mockk(relaxed = true)
+
+    // Use case under test
+    private lateinit var useCase: HandleClsContactFeedbackUseCase
+
+    // Shared test data
+    private val batchReference = ReferenceId("BATCH12345")
+    private val rowReference = ReferenceId("ROWREF0001")
+    private val reconciliationId = ReconciliationId(batchReference, rowReference)
+    private val countryCode = CountryCode("FR")
+    private val fileName = "import-drive.csv"
+    private val contactsCount = 100
+    private val userUid = "jb007"
+    private val now = Instant.now()
+
+    @BeforeEach
+    fun setup() {
+        clearMocks(crmClsContactDataRepositorySpi, recordStepEventRepositorySpi, clockProvider)
+        useCase = HandleClsContactFeedbackUseCase(
+            crmClsContactDataRepositorySpi = crmClsContactDataRepositorySpi,
+            recordStepEventRepositorySpi = recordStepEventRepositorySpi,
+            clockProvider = clockProvider
+        )
+    }
+
+    @Nested
+    @DisplayName("Drive Cases")
+    inner class DriveCases {
+
+        @Test
+        @DisplayName("it should save step event when contact is found")
+        fun `should save step event when contact found`() {
+            val contact = CrmClsContactData(
+                batchId = batchReference.value,
+                rowNumber = 1,
+                reconciliationId = reconciliationId,
+                crmData = CrmData(),
+                clsData = emptyMap(),
+                crmInsertedId = null
+            )
+
+            val feedbackPayload = ClsContactDataFeedbackPayload(
+                countryCode = countryCode,
+                reconciliationId = reconciliationId,
+                scope = "CLS",
+                status = RecordStepStatus.OK,
+                errorMessage = null
+            )
+
+            every { crmClsContactDataRepositorySpi.findByReconciliationId(reconciliationId) } returns contact
+            every { clockProvider.now() } returns now
+
+            useCase.invoke(feedbackPayload)
+
+            verify(exactly = 1) { crmClsContactDataRepositorySpi.findByReconciliationId(reconciliationId) }
+            verify(exactly = 1) {
+                recordStepEventRepositorySpi.save(match {
+                    it.batchId == contact.batchId &&
+                    it.rowNumber == contact.rowNumber &&
+                    it.reconciliationId == reconciliationId &&
+                    it.stepName == RecordStepName.CLS_FEEDBACK &&
+                    it.stepStatus == feedbackPayload.status &&
+                    it.stepMessage == feedbackPayload.fullMessage() &&
+                    it.timestamp == now
+                })
+            }
+        }
+
+        @Test
+        @DisplayName("it should do nothing when contact is not found")
+        fun `should do nothing when contact not found`() {
+            val feedbackPayload = ClsContactDataFeedbackPayload(
+                countryCode = countryCode,
+                reconciliationId = reconciliationId,
+                scope = "CLS",
+                status = RecordStepStatus.KO,
+                errorMessage = "Contact missing"
+            )
+
+            every { crmClsContactDataRepositorySpi.findByReconciliationId(reconciliationId) } returns null
+
+            useCase.invoke(feedbackPayload)
+
+            verify(exactly = 1) { crmClsContactDataRepositorySpi.findByReconciliationId(reconciliationId) }
+            verify(exactly = 0) { recordStepEventRepositorySpi.save(any()) }
+        }
+    }
+}

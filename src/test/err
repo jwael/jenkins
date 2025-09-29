@@ -1,0 +1,38 @@
+package com.arval.blm.core.domain.exception
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+
+class ForbiddenExceptionTest {
+
+    @Test
+    @DisplayName("it should store the message when only message is provided")
+    fun shouldStoreMessage() {
+        // GIVEN
+        val message = "Access denied"
+
+        // WHEN
+        val exception = ForbiddenException(message)
+
+        // THEN
+        assertEquals(message, exception.message)
+        assertNull(exception.cause)
+    }
+
+    @Test
+    @DisplayName("it should store both message and cause when provided")
+    fun shouldStoreMessageAndCause() {
+        // GIVEN
+        val message = "Forbidden operation"
+        val cause = IllegalStateException("Invalid state")
+
+        // WHEN
+        val exception = ForbiddenException(message, cause)
+
+        // THEN
+        assertEquals(message, exception.message)
+        assertEquals(cause, exception.cause)
+    }
+}

@@ -1,0 +1,39 @@
+@Nested
+inner class HandleClsCustomerFeedbackUseCaseTest {
+
+    private val handLeClsCustomerFeedbackUseCaseApi: HandLeClsCustomerFeedbackUseCaseApi = mockk(relaxed = true)
+    private val feedbackUseCase = HandleClsCustomerFeedbackUseCase(handLeClsCustomerFeedbackUseCaseApi)
+
+    @ParameterizedTest
+    @CsvSource(
+        "FR, SUCCESS, ,",
+        "DE, ERROR, 'Message erreur', 'SALES'"
+    )
+    fun `should invoke HandleClsCustomerFeedbackUseCaseApi with correct payload`(
+        country: String,
+        status: String,
+        errorMessage: String?,
+        scope: String?
+    ) {
+        // GIVEN
+        val message = ClsFeedbackCustomerKafkaMessage(
+            scope = scope,
+            status = status,
+            errorMessage = errorMessage
+        )
+
+        val payload = feedbackUseCase.mapToCLsCustomerDataFeedbackPayload(
+            clsFeedbackCustomerKafkaMessage = message,
+            countryCode = country,
+            reconciliationId = "RECON123"
+        )
+
+        // WHEN
+        feedbackUseCase.invoke(clsFeedbackCustomerKafkaMessage = message, countryCode = country)
+
+        // THEN
+        verify(exactly = 1) {
+            handLeClsCustomerFeedbackUseCaseApi.invoke(clsCustomerDataFeedbackPayload = payload)
+        }
+    }
+}

@@ -1,0 +1,63 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import java.time.Instant
+import kotlin.test.assertEquals
+
+class ImportCustomersUseCaseTest {
+
+    private lateinit var referenceIdFactory: ReferenceIdFactory
+    private lateinit var batchRepositorySpi: BatchRepositoryForCustomersSpi
+    private lateinit var clockProvider: ClockProvider
+    private lateinit var importCustomersService: ImportCustomersService
+    private lateinit var useCase: ImportCustomersUseCase
+
+    @BeforeEach
+    fun setup() {
+        referenceIdFactory = mockk()
+        batchRepositorySpi = mockk()
+        clockProvider = mockk()
+        importCustomersService = mockk(relaxed = true)
+
+        useCase = ImportCustomersUseCase(
+            referenceIdFactory = referenceIdFactory,
+            batchRepositorySpi = batchRepositorySpi,
+            clockProvider = clockProvider,
+            importCustomersService = importCustomersService
+        )
+    }
+
+    @Test
+    fun `should create batch and apply customers`() {
+        // GIVEN
+        val generatedReference = Referenceld("REF12345")
+        val now = Instant.now()
+        val customerPayloads = listOf(
+            CustomerPayload(rowNumber = 1, crmdata = CrmData(firstName = "Jean", surname = "Dupont", title = "M.", contactRole = "Client"), clsData = emptyMap()),
+            CustomerPayload(rowNumber = 2, crmdata = CrmData(firstName = "Marie", surname = "Durand", title = "Mme", contactRole = "Prospect"), clsData = emptyMap())
+        )
+
+        every { referenceIdFactory.generate() } returns generatedReference
+        every { clockProvider.now() } returns now
+        every { batchRepositorySpi.save(any()) } answers { firstArg() }
+
+        // WHEN
+        val resultReference = useCase.invoke(
+            personalAccounts = customerPayloads,
+            countryCode = CountryCode("FR"),
+            fileName = "customers.csv",
+            triggeredBy = "U00001",
+            batchType = LoaderBatchType.B2C_CAIXA
+        )
+
+        // THEN
+        assertEquals(generatedReference, resultReference)
+
+        verify {
+            referenceIdFactory.generate()
+            clockProvider.now()
+            batchRepositorySpi.save(match { it.totalContacts == customerPayloads.size && it.countryCode.code == "FR" })
+            importCustomersService.apply(batch = any(), personalAccounts = customerPayloads)
+        }
+    }
+}

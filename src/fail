@@ -1,0 +1,42 @@
+  @ParameterizedTest(name = "it should handle repository returning {0} customers")
+    @CsvSource(
+        "0",  // flux vide
+        "2"   // flux avec 2 entités
+    )
+    fun `it should handle both empty and non-empty stream cases`(customerCount: Int) {
+        // GIVEN
+        val referenceId = ReferenceId("REF12345")
+
+        val entities = if (customerCount == 0) {
+            Stream.empty<CrmClsCustomerDataEntity>()
+        } else {
+            Stream.of(
+                mockk<CrmClsCustomerDataEntity> {
+                    every { toDomain() } returns mockk(relaxed = true)
+                },
+                mockk<CrmClsCustomerDataEntity> {
+                    every { toDomain() } returns mockk(relaxed = true)
+                }
+            )
+        }
+
+        every { crmClsCustomerDataJpaRepository.streamFailedCustomers(referenceId.value) } returns entities
+        every { entityManager.detach(any()) } just Runs
+
+        // WHEN
+        val result = useCase.execute(referenceId)
+
+        // THEN
+        if (customerCount == 0) {
+            assertThat(result).isEmpty()
+        } else {
+            val list = result.toList()
+            assertThat(list).hasSize(customerCount)
+            verify(exactly = customerCount) { entityManager.detach(any()) }
+        }
+
+        verify(exactly = 1) {
+            crmClsCustomerDataJpaRepository.streamFailedCustomers(referenceId.value)
+        }
+    }
+}

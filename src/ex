@@ -1,0 +1,49 @@
+import io.mockk.every
+import io.mockk.mockk
+import org.junit.jupiter.api.Test
+import java.time.Instant
+import java.util.stream.Stream
+import kotlin.test.assertEquals
+
+class ExportEventsUseCaseTest {
+
+    private val batchRepositorySpi: BatchRepositoryForContactsSpi = mockk()
+    private val recordStepEventRepositorySpi: RecordStepEventRepositorySpi = mockk()
+    private val useCase = ExportEventsUseCase(batchRepositorySpi, recordStepEventRepositorySpi)
+
+    @Test
+    fun `execute should return events stream for existing batch`() {
+        // GIVEN
+        val batchReference = Referenceld("BATCH123")
+        val exportCriteria = ExportEventsCriteria() // adapter selon la signature réelle
+        val batch = LoaderBatch(id = "BATCH_ID", reference = batchReference, fileName = "file.csv",
+            triggeredBy = "U001", countryCode = CountryCode("FR"), status = LoaderBatchStatus.RUNNING,
+            type = LoaderBatchType.CONTACTS, startDate = Instant.now(), endDate = null, totalContacts = 2)
+        val events = listOf(
+            RecordStepEvent("STEP1"),
+            RecordStepEvent("STEP2")
+        )
+
+        every { batchRepositorySpi.findByReference(batchReference.value) } returns batch
+        every { recordStepEventRepositorySpi.streamBy(batchId = batch.id, exportsEventsCriteria = exportCriteria) } returns events.stream()
+
+        // WHEN
+        val result = useCase.execute(batchReference, exportCriteria).toList()
+
+        // THEN
+        assertEquals(2, result.size)
+        assertEquals("STEP1", result[0].name)
+        assertEquals("STEP2", result[1].name)
+    }
+
+    @Test
+    fun `execute should return empty stream if batch not found`() {
+        val batchReference = Referenceld("UNKNOWN")
+        val exportCriteria = ExportEventsCriteria()
+
+        every { batchRepositorySpi.findByReference(batchReference.value) } returns null
+
+        val result = useCase.execute(batchReference, exportCriteria).toList()
+        assertEquals(0, result.size)
+    }
+}

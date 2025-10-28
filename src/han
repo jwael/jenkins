@@ -1,0 +1,64 @@
+import io.mockk.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import kotlin.test.assertEquals
+
+class HandleClsCustomerSendingUseCaseTest {
+
+    private lateinit var importCustomersUseCaseApi: ImportCustomersUseCaseApi
+    private lateinit var useCase: HandleClsCustomerSendingUseCase
+
+    @BeforeEach
+    fun setup() {
+        importCustomersUseCaseApi = mockk(relaxed = true)
+        useCase = HandleClsCustomerSendingUseCase(importCustomersUseCaseApi)
+    }
+
+    @Nested
+    inner class InvokeCases {
+
+        @ParameterizedTest
+        @CsvSource(
+            "FR, Jean, Dupont, M., Client",
+            "DE, Marie, Müller, Mme, Prospect",
+            "ES, Carlos, García, Sr., Client",
+            "IT, Lucia, Rossi, Sig.ra, Prospect"
+        )
+        fun `should invoke ImportCustomersUseCaseApi with correct customer payload`(
+            country: String,
+            firstName: String,
+            lastName: String,
+            title: String,
+            role: String
+        ) {
+            // GIVEN
+            val payload = CustomerPayload(
+                rowNumber = 1,
+                crmdata = CrmData(
+                    firstName = firstName,
+                    surname = lastName,
+                    title = title,
+                    salutation = title,
+                    contactRole = role
+                ),
+                clsData = emptyMap()
+            )
+
+            // WHEN
+            useCase.invoke(countryCode = country, customerPayload = payload)
+
+            // THEN
+            verify(exactly = 1) {
+                importCustomersUseCaseApi.invoke(
+                    personalAccounts = listOf(payload),
+                    fileName = null,
+                    countryCode = CountryCode(country),
+                    triggeredBy = LoaderBatchTrigger.E_PARTNER.name,
+                    batchType = LoaderBatchType.B2C_E_PARTNER
+                )
+            }
+        }
+    }
+}

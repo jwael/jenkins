@@ -1,0 +1,69 @@
+@ExtendWith(MockKExtension::class)
+class ExportBatchFailedCustomersUseCaseTest {
+
+    @MockK
+    private lateinit var crmClsCustomerDataJpaRepository: CrmClsCustomerDataJpaRepository
+
+    @MockK
+    private lateinit var entityManager: EntityManager
+
+    private lateinit var useCase: ExportBatchFailedCustomersUseCase
+
+    @BeforeEach
+    fun setup() {
+        useCase = ExportBatchFailedCustomersUseCase(
+            crmClsCustomerDataJpaRepository = crmClsCustomerDataJpaRepository,
+            entityManager = entityManager
+        )
+    }
+
+    @ParameterizedTest(name = "it should handle repository returning {0} customers")
+    @CsvSource(
+        "0",  // flux vide
+        "2"   // flux avec 2 entités
+    )
+    fun `it should handle both empty and non-empty stream cases`(customerCount: Int) {
+        // GIVEN
+        val referenceId = ReferenceId("REF0012345")
+
+        val entities = if (customerCount == 0) {
+            Stream.empty<CrmClsCustomerDataEntity>()
+        } else {
+            Stream.of(
+                mockEntity(),
+                mockEntity()
+            )
+        }
+
+        every { crmClsCustomerDataJpaRepository.streamFailedCustomers(referenceId.value) } returns entities
+        every { entityManager.detach(any()) } just Runs
+
+        // WHEN
+        val result = useCase.execute(referenceId)
+
+        // THEN
+        if (customerCount == 0) {
+            assertThat(result).isEmpty()
+        } else {
+            val list = result.toList()
+            assertThat(list).hasSize(customerCount)
+            verify(exactly = customerCount) { entityManager.detach(any()) }
+        }
+
+        verify(exactly = 1) {
+            crmClsCustomerDataJpaRepository.streamFailedCustomers(referenceId.value)
+        }
+    }
+
+    // ✅ Helper pour créer une entité mockée avec toDomain() sûr
+    private fun mockEntity(): CrmClsCustomerDataEntity {
+        val entity = mockk<CrmClsCustomerDataEntity>()
+        val domain = mockk<CrmClsCustomerData>(relaxed = true)
+
+        // Mock statique de l'extension
+        mockkStatic("com.yourpackage.toDomain") // ⚠️ remplace par ton vrai package
+
+        every { entity.toDomain() } returns domain
+        return entity
+    }
+}

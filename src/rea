@@ -1,0 +1,63 @@
+@ExtendWith(MockKExtension::class)
+class ExportBatchFailedCustomersUseCaseTest {
+
+    @MockK
+    private lateinit var crmClsCustomerDataJpaRepository: CrmClsCustomerDataJpaRepository
+
+    @MockK
+    private lateinit var entityManager: EntityManager
+
+    private lateinit var useCase: ExportBatchFailedCustomersUseCase
+
+    @BeforeEach
+    fun setup() {
+        useCase = ExportBatchFailedCustomersUseCase(
+            crmClsCustomerDataJpaRepository = crmClsCustomerDataJpaRepository,
+            entityManager = entityManager
+        )
+
+        // On "mocke" la fonction d’extension toDomain pour qu’elle soit reconnue
+        mockkStatic("com.arval.blm.infrastructure.driven.postgres.entity.CrmClsCustomerDataEntityKt")
+    }
+
+    @ParameterizedTest(name = "it should handle repository returning {0} customers")
+    @CsvSource(
+        "0",  // flux vide
+        "2"   // flux avec 2 entités
+    )
+    fun `it should handle both empty and non-empty stream cases`(customerCount: Int) {
+        // GIVEN
+        val referenceId = ReferenceId("REF0012345")
+
+        val entities = if (customerCount == 0) {
+            Stream.empty<CrmClsCustomerDataEntity>()
+        } else {
+            val entity1 = mockk<CrmClsCustomerDataEntity>(relaxed = true)
+            val entity2 = mockk<CrmClsCustomerDataEntity>(relaxed = true)
+
+            every { entity1.toDomain() } returns mockk(relaxed = true)
+            every { entity2.toDomain() } returns mockk(relaxed = true)
+
+            Stream.of(entity1, entity2)
+        }
+
+        every { crmClsCustomerDataJpaRepository.streamFailedCustomers(referenceId.value) } returns entities
+        every { entityManager.detach(any()) } just Runs
+
+        // WHEN
+        val result = useCase.execute(referenceId)
+
+        // THEN
+        if (customerCount == 0) {
+            assertThat(result).isEmpty()
+        } else {
+            val list = result.toList()
+            assertThat(list).hasSize(customerCount)
+            verify(exactly = customerCount) { entityManager.detach(any()) }
+        }
+
+        verify(exactly = 1) {
+            crmClsCustomerDataJpaRepository.streamFailedCustomers(referenceId.value)
+        }
+    }
+}
